@@ -1,0 +1,49 @@
+# /etc/systemd/system/rc-controller.service
+#
+# Phase 9 — RC Controller backend service
+#
+# Starts app.py on boot, restarts on failure, runs as the 'pi' user
+# so evdev and serial group permissions are inherited correctly.
+#
+# Install:
+#   sudo cp rc-controller.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable rc-controller
+#   sudo systemctl start rc-controller
+#
+# Logs:
+#   journalctl -u rc-controller -f
+
+[Unit]
+Description=RC Controller – Flask + WebSocket backend
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+# ── Paths — edit WorkingDirectory to match your project location ──────────
+WorkingDirectory=/home/pi/rc-controller
+ExecStart=/home/pi/rc-controller/.venv/bin/python3 app.py
+
+# ── Environment ───────────────────────────────────────────────────────────
+# Override any of these with a /etc/rc-controller.env file if preferred.
+Environment=GAMEPAD_PATH=/dev/input/event5
+Environment=SERIAL_PORT=/dev/ttyUSB0
+Environment=SERIAL_BAUD=115200
+Environment=SERVER_HOST=127.0.0.1
+Environment=SERVER_PORT=5000
+
+# ── Reliability ───────────────────────────────────────────────────────────
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rc-controller
+
+# Give the serial port and evdev device time to appear after boot
+ExecStartPre=/bin/sleep 3
+
+[Install]
+WantedBy=multi-user.target

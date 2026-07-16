@@ -1,0 +1,14 @@
+[
+  {
+    "id": "car_01",
+    "name": "Ground Rover",
+    "image": "assets/vehicles/car_01.webp",
+    "mac": "AA:BB:CC:DD:EE:FF"
+  },
+  {
+    "id": "drone_01",
+    "name": "Scout Drone",
+    "image": "assets/vehicles/drone_01.webp",
+    "mac": "AA:BB:CC:DD:EE:00"
+  }
+]

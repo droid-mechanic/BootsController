@@ -1,0 +1,60 @@
+# /etc/systemd/system/rc-kiosk.service
+#
+# Phase 9 — RC Controller kiosk browser
+#
+# Launches Chromium in full-screen kiosk mode after the backend is up.
+# Runs on the local framebuffer display (no desktop environment needed).
+#
+# Requires: rc-controller.service (backend must be listening first)
+#
+# Install:
+#   sudo cp rc-kiosk.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable rc-kiosk
+#   sudo systemctl start rc-kiosk
+
+[Unit]
+Description=RC Controller – Chromium kiosk display
+After=rc-controller.service graphical.target
+Requires=rc-controller.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+# Chromium needs a running display; DISPLAY and XAUTHORITY point at
+# the local X session started by autologin (see rc-autologin.conf).
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+
+# ── Wait for the backend to be reachable before launching browser ─────────
+ExecStartPre=/bin/bash -c \
+  "for i in $(seq 1 15); do \
+     curl -sf http://127.0.0.1:5000/api/state >/dev/null && break; \
+     sleep 1; \
+   done"
+
+ExecStart=/usr/bin/chromium-browser \
+  --kiosk \
+  --noerrdialogs \
+  --disable-infobars \
+  --disable-session-crashed-bubble \
+  --disable-restore-session-state \
+  --disable-features=TranslateUI \
+  --no-first-run \
+  --check-for-update-interval=31536000 \
+  --touch-events=enabled \
+  --enable-pinch \
+  --fast \
+  --fast-start \
+  http://127.0.0.1:5000/
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rc-kiosk
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>RC Control — HUD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & tokens ───────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0D0D0D;
+      --surface:   #1A1A1A;
+      --surface2:  #222;
+      --border:    #2A2A2A;
+      --text:      #F0F0F0;
+      --muted:     #555;
+      --muted2:    #888;
+      --accent:    #E8FF00;
+      --danger:    #FF4444;
+      --radius:    5px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 13px;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    /* ── App shell ────────────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .wordmark {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .wordmark span { color: var(--accent); }
+
+    .header-sep {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    #vehicle-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted2);
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .status-dot.connected    { background: var(--accent); }
+    .status-dot.disconnected { background: var(--danger); }
+
+    #back-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted2);
+      padding: 5px 12px;
+      border-radius: var(--radius);
+      font-family: 'Inter', sans-serif;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    #back-btn:active { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Main area ────────────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      display: grid;
+      /* left-stick | centre | right-stick */
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      padding: 12px 16px;
+      min-height: 0;
+    }
+
+    /* ── Stick panels ─────────────────────────────────────────────────── */
+    .stick-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .stick-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 500;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted2);
+    }
+
+    /* Square reticle — THE signature element */
+    .reticle-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .reticle {
+      display: block;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: var(--surface);
+      position: relative;
+      overflow: hidden;
+      /* size set by JS to keep it square and responsive */
+      width: var(--reticle-size, 140px);
+      height: var(--reticle-size, 140px);
+    }
+
+    /* Cross-hair lines */
+    .reticle::before,
+    .reticle::after {
+      content: '';
+      position: absolute;
+      background: var(--border);
+      opacity: 0.7;
+    }
+    .reticle::before { width: 1px; height: 100%; left: 50%; top: 0; transform: translateX(-50%); }
+    .reticle::after  { height: 1px; width: 100%; top: 50%; left: 0; transform: translateY(-50%); }
+
+    /* Corner ticks — subtle framing */
+    .reticle-corner {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-color: var(--muted);
+      border-style: solid;
+      border-width: 0;
+      opacity: 0.5;
+    }
+    .reticle-corner.tl { top: 5px;    left: 5px;  border-top-width: 1px; border-left-width: 1px; }
+    .reticle-corner.tr { top: 5px;    right: 5px; border-top-width: 1px; border-right-width: 1px; }
+    .reticle-corner.bl { bottom: 5px; left: 5px;  border-bottom-width: 1px; border-left-width: 1px; }
+    .reticle-corner.br { bottom: 5px; right: 5px; border-bottom-width: 1px; border-right-width: 1px; }
+
+    /* The live dot */
+    .stick-dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      transform: translate(-50%, -50%);
+      top: 50%;
+      left: 50%;
+      transition: top 0.04s linear, left 0.04s linear;
+      box-shadow: 0 0 6px rgba(232,255,0,0.5);
+      z-index: 1;
+    }
+
+    /* Dead-zone ring — visible only when dot is at centre */
+    .dead-zone-ring {
+      position: absolute;
+      top: 50%; left: 50%;
+      /* ~500/32767 ≈ 1.5% of range; scaled relative to reticle size */
+      width: calc(var(--reticle-size, 140px) * 0.055);
+      height: calc(var(--reticle-size, 140px) * 0.055);
+      border: 1px solid var(--muted);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.35;
+    }
+
+    /* Axis value readouts below reticle */
+    .axis-readouts {
+      display: flex;
+      gap: 16px;
+    }
+
+    .axis-readout {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-width: 48px;
+    }
+
+    .axis-readout-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .axis-readout-bar {
+      width: 48px;
+      height: 3px;
+      background: var(--surface2);
+      border-radius: 2px;
+      position: relative;
+      overflow: visible;
+    }
+
+    /* The bar fills from centre outward */
+    .axis-bar-fill {
+      position: absolute;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      top: 0;
+      /* JS sets left + width */
+    }
+
+    .axis-readout-val {
+      font-family: 'Inter', monospace;
+      font-size: 10px;
+      color: var(--muted2);
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Centre column ────────────────────────────────────────────────── */
+    .centre-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      flex-shrink: 0;
+      width: 100px;
+    }
+
+    /* D-pad */
+    .dpad-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 500;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted2);
+    }
+
+    .dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 28px);
+      grid-template-rows: repeat(3, 28px);
+      gap: 3px;
+    }
+
+    .dpad-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 11px;
+      transition: background 0.06s, border-color 0.06s, color 0.06s;
+    }
+
+    /* Active d-pad direction */
+    .dpad-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #000;
+    }
+
+    /* Position each d-pad button in the 3×3 grid */
+    .dpad-btn.up    { grid-column: 2; grid-row: 1; }
+    .dpad-btn.left  { grid-column: 1; grid-row: 2; }
+    .dpad-btn.mid   { grid-column: 2; grid-row: 2; background: var(--surface2); }
+    .dpad-btn.right { grid-column: 3; grid-row: 2; }
+    .dpad-btn.down  { grid-column: 2; grid-row: 3; }
+
+    /* Vehicle meta below dpad */
+    .vehicle-meta {
+      text-align: center;
+    }
+
+    .vehicle-meta-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .vehicle-meta-mac {
+      font-family: 'Inter', monospace;
+      font-size: 9px;
+      color: var(--muted);
+      margin-top: 2px;
+      letter-spacing: 0.03em;
+    }
+
+    /* ── No-vehicle overlay ───────────────────────────────────────────── */
+    #no-vehicle-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(13,13,13,0.92);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      z-index: 100;
+    }
+
+    #no-vehicle-overlay.visible { display: flex; }
+
+    .overlay-icon {
+      font-size: 36px;
+      opacity: 0.4;
+    }
+
+    .overlay-msg {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted2);
+    }
+
+    .overlay-sub {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .overlay-link {
+      margin-top: 4px;
+      padding: 8px 20px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted2);
+      text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .overlay-link:hover { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="wordmark">RC<span>&nbsp;//&nbsp;</span>Control</div>
+    <div class="header-sep"></div>
+    <div id="vehicle-name">—</div>
+    <div class="status">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Connecting</span>
+    </div>
+    <button id="back-btn">← Vehicles</button>
+  </header>
+
+  <main>
+
+    <!-- Left stick -->
+    <div class="stick-panel" id="left-panel">
+      <div class="stick-label">Left Stick</div>
+      <div class="reticle-wrap">
+        <div class="reticle" id="reticle-left">
+          <div class="reticle-corner tl"></div>
+          <div class="reticle-corner tr"></div>
+          <div class="reticle-corner bl"></div>
+          <div class="reticle-corner br"></div>
+          <div class="dead-zone-ring"></div>
+          <div class="stick-dot" id="dot-left"></div>
+        </div>
+      </div>
+      <div class="axis-readouts">
+        <div class="axis-readout">
+          <div class="axis-readout-label">X</div>
+          <div class="axis-readout-bar"><div class="axis-bar-fill" id="bar-lx"></div></div>
+          <div class="axis-readout-val" id="val-lx">0.00</div>
+        </div>
+        <div class="axis-readout">
+          <div class="axis-readout-label">Y</div>
+          <div class="axis-readout-bar"><div class="axis-bar-fill" id="bar-ly"></div></div>
+          <div class="axis-readout-val" id="val-ly">0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Centre: d-pad + vehicle info -->
+    <div class="centre-col">
+      <div class="dpad-label">D-Pad</div>
+      <div class="dpad">
+        <div class="dpad-btn up"    id="dpad-up">▲</div>
+        <div class="dpad-btn left"  id="dpad-left">◀</div>
+        <div class="dpad-btn mid"></div>
+        <div class="dpad-btn right" id="dpad-right">▶</div>
+        <div class="dpad-btn down"  id="dpad-down">▼</div>
+      </div>
+      <div class="vehicle-meta">
+        <div class="vehicle-meta-name" id="meta-name">—</div>
+        <div class="vehicle-meta-mac"  id="meta-mac">—</div>
+      </div>
+    </div>
+
+    <!-- Right stick -->
+    <div class="stick-panel" id="right-panel">
+      <div class="stick-label">Right Stick</div>
+      <div class="reticle-wrap">
+        <div class="reticle" id="reticle-right">
+          <div class="reticle-corner tl"></div>
+          <div class="reticle-corner tr"></div>
+          <div class="reticle-corner bl"></div>
+          <div class="reticle-corner br"></div>
+          <div class="dead-zone-ring"></div>
+          <div class="stick-dot" id="dot-right"></div>
+        </div>
+      </div>
+      <div class="axis-readouts">
+        <div class="axis-readout">
+          <div class="axis-readout-label">X</div>
+          <div class="axis-readout-bar"><div class="axis-bar-fill" id="bar-rx"></div></div>
+          <div class="axis-readout-val" id="val-rx">0.00</div>
+        </div>
+        <div class="axis-readout">
+          <div class="axis-readout-label">Y</div>
+          <div class="axis-readout-bar"><div class="axis-bar-fill" id="bar-ry"></div></div>
+          <div class="axis-readout-val" id="val-ry">0.00</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+</div>
+
+<!-- No-vehicle overlay -->
+<div id="no-vehicle-overlay">
+  <div class="overlay-icon">📡</div>
+  <div class="overlay-msg">No Vehicle Selected</div>
+  <div class="overlay-sub">Select a vehicle before using the HUD.</div>
+  <a class="overlay-link" href="/">← Select Vehicle</a>
+</div>
+
+<script>
+  // ── Channel index mapping (matches CHANNEL_MAP in state.py) ─────────────
+  // 0=ABS_X, 1=ABS_Y, 2=ABS_RX, 3=ABS_RY, 4=ABS_HAT0X, 5=ABS_HAT0Y
+  const CH = { LX: '0', LY: '1', RX: '2', RY: '3', HX: '4', HY: '5' };
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let channels = { '0':0,'1':0,'2':0,'3':0,'4':0,'5':0 };
+  let vehicle  = null;
+  let ws       = null;
+  let wsRetry  = 1000;
+  let rafId    = null;
+  let dirty    = true;   // render on first frame regardless
+
+  // ── DOM ──────────────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+
+  const dotL    = $('dot-left'),   dotR    = $('dot-right');
+  const retL    = $('reticle-left'), retR  = $('reticle-right');
+  const barLX   = $('bar-lx'),    barLY   = $('bar-ly');
+  const barRX   = $('bar-rx'),    barRY   = $('bar-ry');
+  const valLX   = $('val-lx'),    valLY   = $('val-ly');
+  const valRX   = $('val-rx'),    valRY   = $('val-ry');
+  const dpadU   = $('dpad-up'),   dpadD   = $('dpad-down');
+  const dpadL   = $('dpad-left'), dpadR_  = $('dpad-right');
+  const overlay = $('no-vehicle-overlay');
+  const vName   = $('vehicle-name');
+  const metaName = $('meta-name');
+  const metaMac  = $('meta-mac');
+  const statusDot  = $('status-dot');
+  const statusText = $('status-text');
+
+  // ── Reticle sizing (responsive, keep square) ─────────────────────────────
+  function sizeReticles() {
+    const panel = document.querySelector('.stick-panel');
+    if (!panel) return;
+    const available = Math.min(
+      panel.clientWidth  - 32,
+      panel.clientHeight - 80,
+      220
+    );
+    const size = Math.max(100, available) + 'px';
+    document.documentElement.style.setProperty('--reticle-size', size);
+  }
+
+  window.addEventListener('resize', sizeReticles);
+  sizeReticles();
+
+  // ── Render loop (rAF-driven) ──────────────────────────────────────────────
+  function render() {
+    rafId = requestAnimationFrame(render);
+    if (!dirty) return;
+    dirty = false;
+
+    const lx = +channels[CH.LX] || 0;
+    const ly = +channels[CH.LY] || 0;
+    const rx = +channels[CH.RX] || 0;
+    const ry = +channels[CH.RY] || 0;
+    const hx = +channels[CH.HX] || 0;
+    const hy = +channels[CH.HY] || 0;
+
+    // Stick dots — map [-1,1] to [0%,100%] within reticle
+    placeDot(dotL, lx, ly);
+    placeDot(dotR, rx, ry);
+
+    // Bar fills
+    setBar(barLX, lx); setBar(barLY, ly);
+    setBar(barRX, rx); setBar(barRY, ry);
+
+    // Numeric readouts
+    valLX.textContent = fmt(lx); valLY.textContent = fmt(ly);
+    valRX.textContent = fmt(rx); valRY.textContent = fmt(ry);
+
+    // D-pad
+    dpadU.classList.toggle('active',  hy < -0.5);
+    dpadD.classList.toggle('active',  hy >  0.5);
+    dpadL.classList.toggle('active',  hx < -0.5);
+    dpadR_.classList.toggle('active', hx >  0.5);
+  }
+
+  function placeDot(dot, x, y) {
+    // x: -1 = left, +1 = right → left: 0% → 100%
+    // y: -1 = up,   +1 = down  → top:  0% → 100%
+    // Invert Y so positive = down (matches evdev ABS_Y convention)
+    dot.style.left = ((x + 1) / 2 * 100) + '%';
+    dot.style.top  = ((y + 1) / 2 * 100) + '%';
+  }
+
+  function setBar(fill, value) {
+    // Fills from centre outward, direction follows sign
+    const half = 50;
+    const pct  = Math.abs(value) * 50;
+    if (value >= 0) {
+      fill.style.left  = half + '%';
+      fill.style.width = pct  + '%';
+    } else {
+      fill.style.left  = (half - pct) + '%';
+      fill.style.width = pct + '%';
+    }
+  }
+
+  function fmt(v) { return (v >= 0 ? '+' : '') + v.toFixed(2); }
+
+  // ── WebSocket ─────────────────────────────────────────────────────────────
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+    ws.onopen = () => {
+      statusDot.className = 'status-dot connected';
+      statusText.textContent = 'Live';
+      wsRetry = 1000;
+    };
+
+    ws.onmessage = ({ data }) => {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.event !== 'state_update') return;
+
+        vehicle = msg.selected_vehicle;
+        channels = msg.channels || channels;
+
+        // Update vehicle identity fields
+        if (vehicle) {
+          overlay.classList.remove('visible');
+          vName.textContent    = vehicle.name;
+          metaName.textContent = vehicle.name;
+          metaMac.textContent  = vehicle.mac;
+        } else {
+          overlay.classList.add('visible');
+          vName.textContent    = '—';
+          metaName.textContent = '—';
+          metaMac.textContent  = '—';
+        }
+
+        dirty = true;
+      } catch { /* ignore */ }
+    };
+
+    ws.onclose = () => {
+      statusDot.className = 'status-dot disconnected';
+      statusText.textContent = 'Offline';
+      setTimeout(connectWS, wsRetry);
+      wsRetry = Math.min(wsRetry * 2, 10000);
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  // ── Back button ───────────────────────────────────────────────────────────
+  $('back-btn').addEventListener('click', async () => {
+    // Deselect vehicle before navigating away
+    try { await fetch('/api/deselect', { method: 'POST' }); } catch {}
+    location.href = '/';
+  });
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  async function boot() {
+    // Fetch current state immediately so we don't wait for first WS push
+    try {
+      const res  = await fetch('/api/state');
+      const snap = await res.json();
+      vehicle  = snap.selected_vehicle;
+      channels = snap.channels || channels;
+      if (!vehicle) overlay.classList.add('visible');
+      else {
+        vName.textContent    = vehicle.name;
+        metaName.textContent = vehicle.name;
+        metaMac.textContent  = vehicle.mac;
+      }
+      dirty = true;
+    } catch {}
+
+    connectWS();
+    render();
+  }
+
+  boot();
+</script>
+</body>
+</html>

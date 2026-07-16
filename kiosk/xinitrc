@@ -1,0 +1,24 @@
+#!/bin/sh
+# ~/.xinitrc  (for the pi user)
+#
+# Phase 9 — Minimal X session: disable screen blanking, start openbox,
+# then let systemd's rc-kiosk.service handle Chromium.
+#
+# Copy to /home/pi/.xinitrc:
+#   cp kiosk/xinitrc /home/pi/.xinitrc
+#   chmod +x /home/pi/.xinitrc
+
+# ── Kill the screensaver / display power management ───────────────────────
+xset s off
+xset s noblank
+xset -dpms
+
+# ── Hide the mouse cursor after a short idle ──────────────────────────────
+# Requires: sudo apt install unclutter
+unclutter -idle 1 &
+
+# ── Lightweight window manager (no taskbar, no compositor) ───────────────
+openbox --config-file /dev/null &
+
+# ── Block until X exits (keeps the session alive) ─────────────────────────
+wait

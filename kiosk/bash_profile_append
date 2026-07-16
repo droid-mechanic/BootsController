@@ -1,0 +1,16 @@
+# ~/.bash_profile  (append this block for the pi user)
+#
+# Phase 9 — Start X automatically on tty1 after autologin.
+# The X session runs openbox (lightweight WM) so Chromium has a window
+# manager, then immediately hands off to rc-kiosk.service.
+#
+# Append to /home/pi/.bash_profile:
+#
+#   cat kiosk/bash_profile_append >> /home/pi/.bash_profile
+#
+# Required packages:
+#   sudo apt install --no-install-recommends xorg openbox chromium-browser
+
+if [[ -z "$DISPLAY" ]] && [[ "$(tty)" == "/dev/tty1" ]]; then
+    exec startx -- -nocursor 2>/dev/null
+fi
