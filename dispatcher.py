@@ -176,6 +176,7 @@ class Dispatcher:
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def _run(self) -> None:
+        log.info("Dispatcher thread started, reader queue id: %s", id(self._reader.queue))
         if self._auto_open:
             self._bridge.open()
 
@@ -230,6 +231,7 @@ class Dispatcher:
         if channel is None:
             log.debug("Dispatcher: unmapped axis code %d, skipping.", code)
             return
+        # log.info("axis ch=%d, val=%.2f", channel, value)
 
         self._state.update_channel(channel, value)
 

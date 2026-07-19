@@ -34,7 +34,7 @@ from dispatcher    import Dispatcher
 from server        import ControllerServer
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GAMEPAD_PATH = os.getenv("GAMEPAD_PATH", "/dev/input/event0")
+GAMEPAD_PATH = os.getenv("GAMEPAD_PATH", "/dev/input/event5")
 SERIAL_PORT  = os.getenv("SERIAL_PORT",  "/dev/ttyUSB0")
 SERIAL_BAUD  = int(os.getenv("SERIAL_BAUD", "115200"))
 SERVER_HOST  = os.getenv("SERVER_HOST",  "0.0.0.0")
@@ -63,6 +63,8 @@ def main() -> None:
     # ── Dispatcher ────────────────────────────────────────────────────────────
     dispatcher = Dispatcher(reader, state, bridge)
     dispatcher.start()
+    log.info("Dispatcher running: %s", dispatcher.is_running)
+    log.info("Reader queue id: %s", id(reader.queue))
 
     # ── HTTP / WebSocket server ───────────────────────────────────────────────
     controller_server = ControllerServer(
