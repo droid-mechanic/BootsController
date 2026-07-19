@@ -1,9 +1,9 @@
 [
   {
     "id": "car_01",
-    "name": "Ground Rover",
-    "image": "assets/vehicles/car_01.webp",
-    "mac": "AA:BB:CC:DD:EE:FF"
+    "name": "Rollback",
+    "image": "assets/vehicles/Rollback.jpg",
+    "mac": "3C:8A:1F:D4:D8:0C"
   },
   {
     "id": "drone_01",

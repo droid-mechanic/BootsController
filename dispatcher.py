@@ -9,9 +9,11 @@ The dispatcher runs a single daemon thread that:
   1. Drains events from GamepadReader's queue.
   2. Normalises raw evdev axis values to [-1.0, 1.0].
   3. Applies a dead zone to analog sticks (values snap to 0.0 inside it).
-  4. Updates AppState via update_channel().
-  5. Transmits the full channel snapshot over SerialBridge — but only
-     when a vehicle is currently selected.
+  4. Tracks button state as a 2-byte bitmask (see BUTTON_BIT_MAP below),
+     matching the layout expected by tx_firmware.ino / trailer_loader_rx.ino.
+  5. Updates AppState via update_channel().
+  6. Transmits the full channel + button snapshot over SerialBridge on
+     *every* axis or button event — but only when a vehicle is selected.
 
 Serial disconnections are detected on write failure and trigger a
 blocking reconnect inside the thread (the queue keeps filling safely
@@ -62,6 +64,27 @@ RECONNECT_DELAY = 2.0
 
 # Queue drain timeout – keeps the thread responsive to stop().
 QUEUE_TIMEOUT   = 0.1
+
+# ── Button bit layout ──────────────────────────────────────────────────────
+# Must match the ControlPayload.buttons[] layout in tx_firmware.ino /
+# trailer_loader_rx.ino:
+#
+#   buttons[0]  bit0=A  bit1=B  bit2=X  bit3=Y  bit4=L1  bit5=R1  bit6=L2  bit7=R2
+#   buttons[1]  bit0=ThumbL  bit1=ThumbR  (bits 2-7 reserved)
+#
+# Maps evdev BTN_* code → (byte index into the 2-byte bitmask, bit mask).
+BUTTON_BIT_MAP = {
+    ecodes.BTN_SOUTH:  (0, 1 << 0),  # A
+    ecodes.BTN_EAST:   (0, 1 << 1),  # B
+    ecodes.BTN_NORTH:  (0, 1 << 2),  # X
+    ecodes.BTN_WEST:   (0, 1 << 3),  # Y
+    ecodes.BTN_TL:     (0, 1 << 4),  # L1
+    ecodes.BTN_TR:     (0, 1 << 5),  # R1
+    ecodes.BTN_TL2:    (0, 1 << 6),  # L2
+    ecodes.BTN_TR2:    (0, 1 << 7),  # R2
+    ecodes.BTN_THUMBL: (1, 1 << 0),  # ThumbL
+    ecodes.BTN_THUMBR: (1, 1 << 1),  # ThumbR
+}
 
 
 # ── Normalisation helpers ─────────────────────────────────────────────────────
@@ -114,6 +137,10 @@ class Dispatcher:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
+        # 2-byte button bitmask, see BUTTON_BIT_MAP above.
+        self._button_lock = threading.Lock()
+        self._buttons = bytearray(2)
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def start(self) -> None:
@@ -141,6 +168,11 @@ class Dispatcher:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def button_snapshot(self) -> bytes:
+        """Thread-safe read of the current 2-byte button bitmask (e.g. for HUD display)."""
+        with self._button_lock:
+            return bytes(self._buttons)
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def _run(self) -> None:
@@ -167,21 +199,28 @@ class Dispatcher:
         """
         Process a single event dict from GamepadReader.
 
-        Expected shape::
+        Expected shapes::
 
-            {
-                "type": "axis",          # only type the dispatcher cares about
-                "code": <int>,           # evdev axis code
-                "value": <int>,          # raw hardware value
-            }
+            {"type": "axis", "code": <int>, "value": <int>}   # analog stick / d-pad
+            {"type": "key",  "code": <int>, "value": <int>}   # button (0=up,1=down,2=hold)
 
-        Button events (type == "key") are delivered to AppState in future
-        phases; currently ignored here so the serial path stays focused.
+        Both axis and button events update shared state and trigger a
+        transmit — the vehicle needs to react to button presses just as
+        promptly as stick movement.
         """
-        if event.get("type") != "axis":
-            # Button / sync / other events – not consumed here yet.
+        etype = event.get("type")
+
+        if etype == "axis":
+            self._handle_axis(event)
+        elif etype == "key":
+            self._handle_key(event)
+        else:
+            # sync / other events – not consumed here.
             return
 
+        self._transmit()
+
+    def _handle_axis(self, event: dict) -> None:
         code  = event["code"]
         raw   = event["value"]
         value = _normalise(code, raw)
@@ -192,15 +231,34 @@ class Dispatcher:
             log.debug("Dispatcher: unmapped axis code %d, skipping.", code)
             return
 
-        # Update shared state.
         self._state.update_channel(channel, value)
 
-        # Transmit only when a vehicle is selected.
+    def _handle_key(self, event: dict) -> None:
+        code  = event["code"]
+        raw   = event["value"]
+        entry = BUTTON_BIT_MAP.get(code)
+        if entry is None:
+            log.debug("Dispatcher: unmapped button code %d, skipping.", code)
+            return
+
+        byte_index, bit_mask = entry
+        pressed = raw != 0  # evdev: 0=up, 1=down, 2=hold(repeat) — 1 and 2 both count as pressed
+
+        with self._button_lock:
+            if pressed:
+                self._buttons[byte_index] |= bit_mask
+            else:
+                self._buttons[byte_index] &= ~bit_mask & 0xFF
+
+    def _transmit(self) -> None:
+        """Send the current channel + button snapshot over serial, if a vehicle is selected."""
         snapshot = self._state.snapshot()
         if snapshot["selected_vehicle"] is None:
             return
 
-        ok = self._bridge.write_channels(snapshot["channels"])
+        buttons = self.button_snapshot()
+
+        ok = self._bridge.write_channels(snapshot["channels"], buttons)
         if not ok:
             log.warning("Serial write failed – attempting reconnect.")
             self._reconnect()
@@ -220,3 +278,49 @@ class Dispatcher:
             except Exception as exc:
                 log.warning("Reconnect failed (%s) – retrying in %.1fs", exc, RECONNECT_DELAY)
                 time.sleep(RECONNECT_DELAY)
+
+
+"""
+═══════════════════════════════════════════════════════════════════════════
+REQUIRED CHANGE — serial_bridge.py
+═══════════════════════════════════════════════════════════════════════════
+I don't have serial_bridge.py in this session, so I couldn't edit it
+directly. `write_channels()` now needs a second parameter (the 2-byte
+button bitmask) and must frame a 10-byte packet instead of 8:
+
+    < ch0 ch1 ch2 ch3 ch4 ch5 btn0 btn1 >
+
+where each ch is a single byte 0-254 (centre=127), matching what
+tx_firmware.ino expects. If write_channels currently does something like:
+
+    def write_channels(self, channels: list[float]) -> bool:
+        payload = bytes(
+            int((v + 1.0) / 2.0 * 254) for v in channels
+        )
+        frame = b'<' + payload + b'>'
+        ...
+
+...the fix is just to extend the signature and frame:
+
+    def write_channels(self, channels: list[float], buttons: bytes) -> bool:
+        payload = bytes(
+            int((v + 1.0) / 2.0 * 254) for v in channels
+        )
+        frame = b'<' + payload + bytes(buttons) + b'>'
+        with self._lock:
+            if not self.is_connected:
+                return False
+            try:
+                self._serial.write(frame)
+                return True
+            except serial.serialutil.SerialException as exc:
+                log.error("write_channels error: %s", exc)
+                self._serial.close()
+                self._serial = None
+                return False
+
+Paste in your actual serial_bridge.py and I'll make the precise edit —
+I'm guessing at the packing/framing details above since I haven't seen
+the real implementation.
+═══════════════════════════════════════════════════════════════════════════
+"""
