@@ -45,6 +45,8 @@ from functools import wraps
 from flask import Flask, jsonify, send_from_directory, abort
 from flask_sock import Sock
 
+from simple_websocket import ConnectionClosed
+
 log = logging.getLogger(__name__)
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
@@ -171,9 +173,7 @@ class ControllerServer:
                     # Clients send nothing, so this is just a keep-alive poll.
                     try:
                         msg = ws.receive(timeout=1)
-                        if msg is None:
-                            break   # client disconnected
-                    except Exception:
+                    except ConnectionClosed:
                         break
             finally:
                 with self._ws_lock:
