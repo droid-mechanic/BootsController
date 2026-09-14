@@ -98,6 +98,7 @@ void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
 #define bladeTilt1 26       // /
 #define ripperMotor0 33     // \ Used for controlling front drive motor movement
 #define ripperMotor1 32     // /
+#define ripperServoPin 23
 
 Servo ripperServo;
 
