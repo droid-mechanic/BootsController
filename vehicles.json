@@ -8,7 +8,13 @@
   {
     "id": "loader",
     "name": "Loader",
-    "image": "assets/vehicles/drone_01.webp",
+    "image": "vehicles/Loader.jpeg",
     "mac": "CC:DB:A7:33:59:60"
+  },
+  {
+    "id": "bombi",
+    "name": "Bombi",
+    "image": "vehicles/Bombi.jpeg",
+    "mac": "E0:8C:FE:58:BF:34"
   }
 ]
