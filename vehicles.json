@@ -16,5 +16,11 @@
     "name": "Bombi",
     "image": "vehicles/Bombi.jpg",
     "mac": "E0:8C:FE:58:BF:34"
+  },
+  {
+    "id": "crane",
+    "name": "Crane truck",
+    "image": "vehicles/Crane.jpg",
+    "mac": "A0:B7:65:22:DC:40"
   }
 ]
