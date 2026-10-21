@@ -22,5 +22,11 @@
     "name": "Crane truck",
     "image": "vehicles/Crane.jpg",
     "mac": "A0:B7:65:22:DC:40"
+  },
+  {
+    "id": "dozer",
+    "name": "Dozer",
+    "image": "vehicles/dozer.jpg",
+    "mac": "E0:8C:FE:B4:DE:20"
   }
 ]

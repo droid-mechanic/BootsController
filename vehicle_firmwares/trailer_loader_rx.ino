@@ -384,14 +384,18 @@ void processBoom(int axisRYValue) {
 void processThrottleDipper(int axisYValue) {
     int adjustedThrottleValue = axisYValue / 2;
     if (!loaderMode) {
-        int smokeThrottle = adjustedThrottleValue / 3;
         moveMotor(rearMotor2, rearMotor3, adjustedThrottleValue);
         moveMotor(frontMotor0, frontMotor1, adjustedThrottleValue);
-        moveMotor(auxAttach2, auxAttach3, smokeThrottle);
     } else if (adjustedThrottleValue > 80 || adjustedThrottleValue < -80) {
         moveMotor(auxAttach0, auxAttach1, adjustedThrottleValue);
     } else if (adjustedThrottleValue > -80 && adjustedThrottleValue < 80) {
         moveMotor(auxAttach0, auxAttach1, 0);
+    } else {
+        loaderMode = false;
+        moveMotor(rearMotor0, rearMotor1, 0);   // pivot
+        moveMotor(auxAttach0, auxAttach1, 0);   // dipper
+        moveMotor(auxAttach2, auxAttach3, 0);   // boom
+        moveMotor(auxAttach5, auxAttach4, 0);   // grapple
     }
 }
 
