@@ -28,5 +28,11 @@
     "name": "Dozer",
     "image": "vehicles/dozer.jpg",
     "mac": "E0:8C:FE:B4:DE:20"
+  },
+  {
+    "id": "wrecker",
+    "name": "Wrecker",
+    "image": "vehicles/wrecker.jpg",
+    "mac": "8C:AA:B5:80:E6:E8"
   }
 ]
