@@ -16,9 +16,12 @@
       --border:    #2A2A2A;
       --text:      #F0F0F0;
       --muted:     #666;
-      --accent:    #E8FF00;
       --danger:    #FF4444;
       --radius:    6px;
+
+      /* Player identity colours, as r,g,b so they can be used with alpha. */
+      --p0-rgb: 232, 255, 0;     /* yellow - the original accent */
+      --p1-rgb: 0, 212, 255;     /* cyan */
     }
 
     html, body {
@@ -31,7 +34,6 @@
       overflow: hidden;
     }
 
-    /* ── Layout ───────────────────────────────────────────────────────── */
     #app {
       display: flex;
       flex-direction: column;
@@ -43,7 +45,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 20px;
+      padding: 10px 20px;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
@@ -54,14 +56,9 @@
       font-size: 18px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: var(--text);
     }
+    .wordmark span { color: rgb(var(--p0-rgb)); }
 
-    .wordmark span {
-      color: var(--accent);
-    }
-
-    /* Connection status */
     .status {
       display: flex;
       align-items: center;
@@ -73,182 +70,217 @@
       color: var(--muted);
     }
 
-    .status-dot {
+    .dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
       background: var(--muted);
+      flex-shrink: 0;
       transition: background 0.3s;
     }
+    .dot.on  { background: rgb(var(--p-rgb, var(--p0-rgb))); }
+    .dot.off { background: var(--danger); }
 
-    .status-dot.connected    { background: var(--accent); }
-    .status-dot.disconnected { background: var(--danger); }
+    /* ── Split layout ─────────────────────────────────────────────────── */
+    #split {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1px 1fr;
+    }
 
-    /* ── Instruction strip ────────────────────────────────────────────── */
-    .instruction {
-      padding: 10px 20px;
-      font-size: 11px;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: var(--muted);
+    .divider { background: var(--border); }
+
+    .panel {
+      --p-rgb: var(--p0-rgb);
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel[data-player="1"] { --p-rgb: var(--p1-rgb); }
+
+    /* Panel head: the coloured bar is the player's identity. */
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 16px;
+      border-top: 3px solid rgb(var(--p-rgb));
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
 
-    /* ── Vehicle grid ─────────────────────────────────────────────────── */
-    #grid-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
+    .player-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: 0.06em;
+      color: rgb(var(--p-rgb));
     }
 
-    #vehicle-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 14px;
+    .ctrl {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
     }
+    .ctrl.connected { color: var(--text); }
+
+    /* ── Vertical carousel ────────────────────────────────────────────── */
+    .carousel {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scroll-snap-type: y mandatory;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: var(--pad, 0px) 16px;
+      scrollbar-width: none;
+      /* Fade the neighbours that peek in above and below the centre card. */
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+              mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+    }
+    .carousel::-webkit-scrollbar { display: none; }
 
     /* ── Vehicle card ─────────────────────────────────────────────────── */
     .vehicle-card {
+      flex: 0 0 var(--card-h, 220px);
+      display: flex;
+      flex-direction: column;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
       cursor: pointer;
       user-select: none;
-      transition: border-color 0.15s, transform 0.1s;
       position: relative;
+      scroll-snap-align: center;
       outline: 2px solid transparent;
       outline-offset: 2px;
+      transition: border-color 0.15s, transform 0.1s, opacity 0.2s;
     }
 
-    .vehicle-card:active {
-      transform: scale(0.97);
-    }
+    .vehicle-card:active:not(.taken) { transform: scale(0.98); }
+    .vehicle-card:focus-visible { outline-color: var(--text); }
 
-    /* Selected state: the signature yellow corona */
     .vehicle-card.selected {
-      border-color: var(--accent);
-      outline-color: var(--accent);
-      animation: corona-pulse 0.35s ease-out forwards;
+      border-color: rgb(var(--p-rgb));
+      outline-color: rgb(var(--p-rgb));
     }
+    .vehicle-card.pulse { animation: corona-pulse 0.35s ease-out forwards; }
 
     @keyframes corona-pulse {
-      0%   { box-shadow: 0 0 0 0 rgba(232,255,0,0.55); }
-      60%  { box-shadow: 0 0 0 8px rgba(232,255,0,0.15); }
-      100% { box-shadow: 0 0 0 4px rgba(232,255,0,0.08); }
+      0%   { box-shadow: 0 0 0 0 rgba(var(--p-rgb), 0.55); }
+      60%  { box-shadow: 0 0 0 8px rgba(var(--p-rgb), 0.15); }
+      100% { box-shadow: 0 0 0 4px rgba(var(--p-rgb), 0.08); }
     }
-
     @media (prefers-reduced-motion: reduce) {
-      .vehicle-card.selected { animation: none; box-shadow: 0 0 0 4px rgba(232,255,0,0.12); }
+      .vehicle-card.pulse { animation: none; box-shadow: 0 0 0 4px rgba(var(--p-rgb), 0.12); }
     }
 
-    /* Image area */
+    /* A vehicle held by the other player: visible but not selectable. */
+    .vehicle-card.taken { cursor: not-allowed; }
+    .vehicle-card.taken .card-image,
+    .vehicle-card.taken .card-body { opacity: 0.35; filter: grayscale(1); }
+
     .card-image {
-      width: 100%;
-      aspect-ratio: 4 / 3;
+      flex: 1;
+      min-height: 0;
       background: #111;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
+      transition: opacity 0.2s;
     }
+    .card-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .img-placeholder { font-size: 40px; opacity: 0.18; }
 
-    .card-image img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    /* Placeholder when no image */
-    .card-image .img-placeholder {
-      font-size: 40px;
-      opacity: 0.18;
-    }
-
-    /* Selected tick overlay */
-    .card-tick {
+    .card-badge {
       display: none;
       position: absolute;
       top: 8px;
       right: 8px;
-      width: 22px;
-      height: 22px;
-      background: var(--accent);
-      border-radius: 50%;
       align-items: center;
-      justify-content: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #000;
+      background: rgb(var(--badge-rgb, var(--p-rgb)));
     }
+    .vehicle-card.selected .card-badge,
+    .vehicle-card.taken .card-badge { display: flex; }
 
-    .vehicle-card.selected .card-tick {
-      display: flex;
+    .card-badge svg {
+      width: 12px; height: 12px;
+      stroke: #000; stroke-width: 2.5; fill: none;
     }
+    .vehicle-card.taken .card-badge svg { display: none; }
 
-    .card-tick svg {
-      width: 12px;
-      height: 12px;
-      stroke: #000;
-      stroke-width: 2.5;
-      fill: none;
-    }
-
-    /* Card body */
-    .card-body {
-      padding: 10px 12px 12px;
-    }
+    .card-body { padding: 10px 14px 12px; flex-shrink: 0; transition: opacity 0.2s; }
 
     .card-name {
       font-family: 'Barlow Condensed', sans-serif;
       font-weight: 700;
-      font-size: 17px;
+      font-size: 19px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      color: var(--text);
     }
 
     .card-mac {
-      font-family: 'Inter', monospace;
       font-size: 10px;
       color: var(--muted);
       margin-top: 3px;
       letter-spacing: 0.03em;
     }
 
-    /* ── Footer bar ───────────────────────────────────────────────────── */
-    footer {
-      padding: 12px 20px;
-      border-top: 1px solid var(--border);
+    .state-message {
+      margin: auto;
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* ── Panel footer ─────────────────────────────────────────────────── */
+    .panel-foot {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      min-height: 52px;
       flex-shrink: 0;
     }
 
-    #selection-label {
-      font-size: 12px;
-      color: var(--muted);
-      letter-spacing: 0.04em;
-    }
-
-    #selection-label strong {
-      color: var(--accent);
+    .sel-label { font-size: 12px; color: var(--muted); }
+    .sel-label strong {
+      color: rgb(var(--p-rgb));
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
-    #deselect-btn {
+    .release {
       display: none;
       background: none;
       border: 1px solid var(--border);
       color: var(--muted);
-      padding: 6px 14px;
+      padding: 8px 16px;
       border-radius: var(--radius);
       font-family: 'Inter', sans-serif;
       font-size: 11px;
@@ -258,26 +290,27 @@
       cursor: pointer;
       transition: border-color 0.15s, color 0.15s;
     }
+    .release:active { border-color: var(--danger); color: var(--danger); }
 
-    #deselect-btn:active {
-      border-color: var(--danger);
-      color: var(--danger);
-    }
-
-    /* ── Empty / loading states ───────────────────────────────────────── */
-    .state-message {
-      grid-column: 1 / -1;
-      text-align: center;
-      padding: 60px 20px;
-      color: var(--muted);
+    /* ── Toast ────────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 70px;
+      transform: translate(-50%, 12px);
+      max-width: 80%;
+      padding: 10px 18px;
+      background: var(--text);
+      color: #000;
+      border-radius: var(--radius);
       font-size: 13px;
-      letter-spacing: 0.04em;
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 10;
     }
-
-    /* ── Scrollbar ────────────────────────────────────────────────────── */
-    #grid-container::-webkit-scrollbar { width: 4px; }
-    #grid-container::-webkit-scrollbar-track { background: transparent; }
-    #grid-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
   </style>
 </head>
 <body>
@@ -286,199 +319,300 @@
   <header>
     <div class="wordmark">RC<span>&nbsp;//&nbsp;</span>Control</div>
     <div class="status">
-      <div class="status-dot" id="status-dot"></div>
+      <div class="dot" id="status-dot"></div>
       <span id="status-text">Connecting</span>
     </div>
   </header>
 
-  <div class="instruction">Select a vehicle to begin</div>
-
-  <div id="grid-container">
-    <div id="vehicle-grid">
-      <div class="state-message">Loading vehicles…</div>
-    </div>
-  </div>
-
-  <footer>
-    <div id="selection-label">No vehicle selected</div>
-    <button id="deselect-btn">Release</button>
-  </footer>
+  <main id="split"><!-- panels are built by script --></main>
 
 </div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
-  // ── State ────────────────────────────────────────────────────────────────
-  let vehicles      = [];
-  let selectedId    = null;
-  let ws            = null;
-  let wsRetryDelay  = 1000;
+  // ── Config ───────────────────────────────────────────────────────────────
+  const NUM_PLAYERS = 2;
+  const PLAYER_RGB  = ['232, 255, 0', '0, 212, 255'];   // keep in sync with CSS
+  const CARD_FRACTION = 0.64;   // card height as a share of the carousel height
 
-  // ── DOM refs ─────────────────────────────────────────────────────────────
-  const grid        = document.getElementById('vehicle-grid');
-  const statusDot   = document.getElementById('status-dot');
-  const statusText  = document.getElementById('status-text');
-  const selLabel    = document.getElementById('selection-label');
-  const deselectBtn = document.getElementById('deselect-btn');
+  // ── State ────────────────────────────────────────────────────────────────
+  let vehicles     = [];
+  let players      = Array.from({ length: NUM_PLAYERS }, () => ({
+    controller: { connected: false, name: null }, selected_vehicle: null,
+  }));
+  let prevSelected = Array(NUM_PLAYERS).fill(null);   // for animation / scroll triggers
+  let ws           = null;
+  let wsRetryDelay = 1000;
+  let toastTimer   = null;
+
+  // ── DOM ──────────────────────────────────────────────────────────────────
+  const split      = document.getElementById('split');
+  const statusDot  = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const toastEl    = document.getElementById('toast');
+  const panels     = [];   // { root, carousel, ctrl, ctrlText, ctrlDot, label, release }
+
+  function buildPanels() {
+    for (let p = 0; p < NUM_PLAYERS; p++) {
+      if (p > 0) split.insertAdjacentHTML('beforeend', '<div class="divider"></div>');
+
+      const root = document.createElement('section');
+      root.className = 'panel';
+      root.dataset.player = p;
+      root.setAttribute('aria-label', `Player ${p + 1}`);
+      root.innerHTML = `
+        <div class="panel-head">
+          <div class="player-name">Player ${p + 1}</div>
+          <div class="ctrl"><div class="dot"></div><span>No controller</span></div>
+        </div>
+        <div class="carousel"><div class="state-message">Loading vehicles…</div></div>
+        <div class="panel-foot">
+          <div class="sel-label">No vehicle selected</div>
+          <button class="release" type="button">Release</button>
+        </div>`;
+      split.appendChild(root);
+
+      const panel = {
+        root,
+        carousel: root.querySelector('.carousel'),
+        ctrl:     root.querySelector('.ctrl'),
+        ctrlDot:  root.querySelector('.ctrl .dot'),
+        ctrlText: root.querySelector('.ctrl span'),
+        label:    root.querySelector('.sel-label'),
+        release:  root.querySelector('.release'),
+      };
+      panel.release.addEventListener('click', () => release(p));
+      new ResizeObserver(() => sizeCarousel(panel.carousel)).observe(panel.carousel);
+      panels.push(panel);
+    }
+  }
+
+  // Size cards relative to the carousel so the first/last card can centre and
+  // the neighbours peek in.
+  function sizeCarousel(el) {
+    const h = el.clientHeight;
+    if (!h) return;
+    const cardH = Math.round(h * CARD_FRACTION);
+    el.style.setProperty('--card-h', cardH + 'px');
+    el.style.setProperty('--pad', Math.max(0, Math.round((h - cardH) / 2)) + 'px');
+  }
 
   // ── Boot ─────────────────────────────────────────────────────────────────
   async function boot() {
+    buildPanels();
     await loadVehicles();
     connectWS();
   }
 
-  // ── Load vehicle list ─────────────────────────────────────────────────────
   async function loadVehicles() {
     try {
       const res = await fetch('/api/vehicles');
       if (!res.ok) throw new Error(res.status);
       vehicles = await res.json();
-      renderGrid();
-    } catch (err) {
-      grid.innerHTML = '<div class="state-message">Could not load vehicles. Check connection.</div>';
+      renderCarousels();
+      updateUI();
+    } catch {
+      panels.forEach(p => {
+        p.carousel.innerHTML = '<div class="state-message">Could not load vehicles. Check connection.</div>';
+      });
     }
   }
 
-  // ── Render grid ───────────────────────────────────────────────────────────
-  function renderGrid() {
-    if (!vehicles.length) {
-      grid.innerHTML = '<div class="state-message">No vehicles configured.</div>';
+  // ── Render ───────────────────────────────────────────────────────────────
+  function renderCarousels() {
+    panels.forEach((panel, p) => {
+      if (!vehicles.length) {
+        panel.carousel.innerHTML = '<div class="state-message">No vehicles configured.</div>';
+        return;
+      }
+
+      panel.carousel.innerHTML = vehicles.map(v => `
+        <div class="vehicle-card" data-id="${escHtml(v.id)}"
+             role="button" tabindex="0" aria-label="${escHtml(v.name)}">
+          <div class="card-image">
+            ${v.image
+              ? `<img src="/static/images/${escHtml(v.image)}" alt="" loading="lazy">`
+              : '<span class="img-placeholder">🚗</span>'}
+          </div>
+          <div class="card-badge">
+            <svg viewBox="0 0 12 12"><polyline points="1.5,6 4.5,9 10.5,3"/></svg>
+            <span></span>
+          </div>
+          <div class="card-body">
+            <div class="card-name">${escHtml(v.name)}</div>
+            <div class="card-mac">${escHtml(v.mac)}</div>
+          </div>
+        </div>`).join('');
+
+      panel.carousel.querySelectorAll('.vehicle-card').forEach(card => {
+        const img = card.querySelector('img');
+        if (img) img.addEventListener('error', () => {
+          img.parentElement.innerHTML = '<span class="img-placeholder">🚗</span>';
+        });
+        card.addEventListener('click', () => select(p, card.dataset.id));
+        card.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(p, card.dataset.id); }
+        });
+      });
+      sizeCarousel(panel.carousel);
+    });
+  }
+
+  function ownerOf(vehicleId) {
+    const idx = players.findIndex(pl => pl.selected_vehicle && pl.selected_vehicle.id === vehicleId);
+    return idx === -1 ? null : idx;
+  }
+
+  function updateUI() {
+    panels.forEach((panel, p) => {
+      const pl  = players[p];
+      const sel = pl.selected_vehicle ? pl.selected_vehicle.id : null;
+
+      // Controller status
+      const connected = !!(pl.controller && pl.controller.connected);
+      panel.ctrl.classList.toggle('connected', connected);
+      panel.ctrlDot.className = 'dot ' + (connected ? 'on' : 'off');
+      panel.ctrlText.textContent = connected ? 'Controller connected' : 'No controller';
+
+      // Cards
+      panel.carousel.querySelectorAll('.vehicle-card').forEach(card => {
+        const owner    = ownerOf(card.dataset.id);
+        const mine     = owner === p;
+        const taken    = owner !== null && !mine;
+        const wasMine  = card.classList.contains('selected');
+
+        card.classList.toggle('selected', mine);
+        card.classList.toggle('taken', taken);
+        card.setAttribute('aria-disabled', taken ? 'true' : 'false');
+        card.tabIndex = taken ? -1 : 0;
+
+        const badgeText = card.querySelector('.card-badge span');
+        if (mine) {
+          badgeText.textContent = 'Yours';
+          card.style.removeProperty('--badge-rgb');
+        } else if (taken) {
+          badgeText.textContent = `Player ${owner + 1}`;
+          card.style.setProperty('--badge-rgb', PLAYER_RGB[owner]);
+        }
+
+        // Replay the pulse only when this card has just become selected.
+        if (mine && !wasMine) {
+          card.classList.remove('pulse');
+          void card.offsetWidth;
+          card.classList.add('pulse');
+        }
+      });
+
+      // Footer
+      const vehicle = vehicles.find(v => v.id === sel);
+      if (vehicle) {
+        panel.label.innerHTML = `Driving&nbsp;&nbsp;<strong>${escHtml(vehicle.name)}</strong>`;
+        panel.release.style.display = 'block';
+      } else {
+        panel.label.textContent = 'No vehicle selected';
+        panel.release.style.display = 'none';
+      }
+
+      // Bring a newly selected card to the centre of this carousel.
+      if (sel && sel !== prevSelected[p]) {
+        const card = panel.carousel.querySelector(`.vehicle-card[data-id="${CSS.escape(sel)}"]`);
+        if (card) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+      prevSelected[p] = sel;
+    });
+  }
+
+  function applyState(msg) {
+    if (!msg || !Array.isArray(msg.players)) return;
+    players = msg.players;
+    updateUI();
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+  async function select(player, id) {
+    const owner = ownerOf(id);
+    if (owner === player) return;                       // already mine
+    if (owner !== null) {                               // other player's
+      toast(`${vehicleName(id)} is in use by Player ${owner + 1}`);
       return;
     }
 
-    grid.innerHTML = vehicles.map(v => `
-      <div class="vehicle-card${v.id === selectedId ? ' selected' : ''}"
-           data-id="${v.id}"
-           role="button"
-           tabindex="0"
-           aria-label="${v.name}">
-        <div class="card-image">
-          ${v.image
-            ? `<img src="/static/images/${v.image}" alt="${v.name}" onerror="this.parentElement.innerHTML='<span class=\\'img-placeholder\\'>🚗</span>'">`
-            : '<span class="img-placeholder">🚗</span>'}
-        </div>
-        <div class="card-tick">
-          <svg viewBox="0 0 12 12"><polyline points="1.5,6 4.5,9 10.5,3"/></svg>
-        </div>
-        <div class="card-body">
-          <div class="card-name">${escHtml(v.name)}</div>
-          <div class="card-mac">${escHtml(v.mac)}</div>
-        </div>
-      </div>
-    `).join('');
-
-    // Touch / click handler on grid (event delegation)
-    grid.querySelectorAll('.vehicle-card').forEach(card => {
-      card.addEventListener('click', () => selectVehicle(card.dataset.id));
-      card.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') selectVehicle(card.dataset.id);
-      });
-    });
-  }
-
-  // ── Selection ─────────────────────────────────────────────────────────────
-  async function selectVehicle(id) {
-    if (id === selectedId) return;   // already selected - no-op
-
-    // Optimistic UI update
-    applySelection(id);
-
     try {
-      const res = await fetch(`/api/select/${encodeURIComponent(id)}`, { method: 'POST' });
-      if (!res.ok) {
-        // Roll back
-        applySelection(selectedId);
-        console.warn('Select failed:', res.status);
+      const res  = await fetch(`/api/players/${player}/select/${encodeURIComponent(id)}`, { method: 'POST' });
+      const body = await res.json().catch(() => null);
+      if (res.ok) {
+        applyState(body);
+      } else if (res.status === 409 && body) {
+        // Lost a race: the other player claimed it a moment earlier.
+        applyState(body.state);
+        toast(body.error);
+      } else {
+        toast('Could not select vehicle');
       }
-      // Server will push a WS update; we don't need to parse the response.
     } catch {
-      applySelection(selectedId);
+      toast('Could not reach the controller');
     }
   }
 
-  async function deselect() {
+  async function release(player) {
     try {
-      await fetch('/api/deselect', { method: 'POST' });
-      // WS update will arrive; optimistic clear
-      applySelection(null);
-    } catch (err) {
-      console.warn('Deselect failed:', err);
+      const res = await fetch(`/api/players/${player}/deselect`, { method: 'POST' });
+      if (res.ok) applyState(await res.json());
+    } catch {
+      toast('Could not reach the controller');
     }
   }
 
-  function applySelection(id) {
-    selectedId = id;
-
-    // Update cards
-    grid.querySelectorAll('.vehicle-card').forEach(card => {
-      const isSelected = card.dataset.id === id;
-      card.classList.toggle('selected', isSelected);
-
-      // Re-trigger animation by removing + re-adding class
-      if (isSelected) {
-        card.classList.remove('selected');
-        // Force reflow
-        void card.offsetWidth;
-        card.classList.add('selected');
-      }
-    });
-
-    // Update footer
-    const vehicle = vehicles.find(v => v.id === id);
-    if (vehicle) {
-      selLabel.innerHTML = `Active&nbsp;&nbsp;<strong>${escHtml(vehicle.name)}</strong>`;
-      deselectBtn.style.display = 'block';
-    } else {
-      selLabel.textContent = 'No vehicle selected';
-      deselectBtn.style.display = 'none';
-    }
-  }
-
-  // ── WebSocket ─────────────────────────────────────────────────────────────
+  // ── WebSocket ────────────────────────────────────────────────────────────
   function connectWS() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/ws`);
 
     ws.onopen = () => {
-      setStatus('connected', 'Live');
+      setStatus('on', 'Live');
       wsRetryDelay = 1000;
     };
 
     ws.onmessage = ({ data }) => {
       try {
         const msg = JSON.parse(data);
-        if (msg.event === 'state_update') {
-          const newId = msg.selected_vehicle ? msg.selected_vehicle.id : null;
-          if (newId !== selectedId) applySelection(newId);
-        }
+        if (msg.event === 'state_update') applyState(msg);
       } catch { /* ignore malformed */ }
     };
 
     ws.onclose = () => {
-      setStatus('disconnected', 'Offline');
-      // Exponential back-off, capped at 10 s
+      setStatus('off', 'Offline');
       setTimeout(connectWS, wsRetryDelay);
-      wsRetryDelay = Math.min(wsRetryDelay * 2, 10000);
+      wsRetryDelay = Math.min(wsRetryDelay * 2, 10000);   // capped at 10 s
     };
 
     ws.onerror = () => ws.close();
   }
 
-  // ── UI helpers ────────────────────────────────────────────────────────────
+  // ── UI helpers ───────────────────────────────────────────────────────────
   function setStatus(state, label) {
-    statusDot.className  = `status-dot ${state}`;
+    statusDot.className = `dot ${state}`;
     statusText.textContent = label;
+  }
+
+  function vehicleName(id) {
+    const v = vehicles.find(v => v.id === id);
+    return v ? v.name : 'Vehicle';
+  }
+
+  function toast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
   }
 
   function escHtml(str) {
     return String(str)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  // ── Deselect button ───────────────────────────────────────────────────────
-  deselectBtn.addEventListener('click', deselect);
-
-  // ── Go ────────────────────────────────────────────────────────────────────
   boot();
 </script>
 </body>

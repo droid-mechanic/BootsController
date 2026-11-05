@@ -197,9 +197,18 @@ class Dispatcher:
             log.info("Dispatcher loop exited.")
 
     def _handle_event(self, event: dict) -> None:
-        if event.get("player", 0) != 0:      # TEMP: only player 1 drives until Phase 3
+        player = event.get("player", 0)
+        etype  = event.get("type")
+
+        if etype == "connect":
+            self._state.set_controller(player, True, event.get("name"))
             return
-        etype = event.get("type")
+        if etype == "disconnect":
+            self._state.set_controller(player, False)
+            return
+
+        if player != 0:        # TEMP until Phase 3: only player 1 drives
+            return
 
         if etype == "axis":
             self._handle_axis(event)

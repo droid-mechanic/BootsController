@@ -1,35 +1,50 @@
 # server.py
 """
-Phase 5 – Flask + WebSocket Backend
-====================================
+Flask + WebSocket Backend (two-player)
+======================================
 HTTP REST + WebSocket server that bridges the frontend UI to the
-controller pipeline (GamepadReader → Dispatcher → SerialBridge).
+controller pipeline (GamepadManager → Dispatcher → SerialBridge).
 
 REST endpoints
 --------------
-GET  /api/vehicles            → JSON list of all vehicles
-GET  /api/state               → JSON snapshot of current AppState
-POST /api/select/<vehicle_id> → Select a vehicle; returns updated state
-POST /api/deselect            → Deselect current vehicle; returns updated state
+GET  /api/vehicles                          → JSON list of all vehicles
+GET  /api/state                             → JSON snapshot of current AppState
+POST /api/players/<n>/select/<vehicle_id>   → Player n (0 or 1) claims a vehicle.
+                                              200 + state on success,
+                                              409 + {error, taken_by, state} if the
+                                              other player already holds it.
+POST /api/players/<n>/deselect              → Player n releases their vehicle.
+
+Legacy aliases for player 0 (older frontends):
+POST /api/select/<vehicle_id>
+POST /api/deselect
 
 WebSocket
 ---------
 ws://host/ws
 
-The server pushes a JSON state snapshot to every connected client
-whenever anything meaningful changes:
-  - A vehicle is selected or deselected
-  - A gamepad axis value changes (throttled - see WS_AXIS_INTERVAL)
+The server pushes a JSON state snapshot to every connected client whenever
+a vehicle is claimed/released or a controller connects/disconnects.
 
 Message format (server → client):
     {
-        "event":            "state_update",
-        "selected_vehicle": { id, name, image, mac } | null,
-        "channels":         { "0": float, "1": float, … }   ← string keys
+        "event":   "state_update",
+        "players": [
+            {
+                "player":           0,
+                "controller":       { "connected": bool, "name": str | null },
+                "selected_vehicle": { id, name, image, mac } | null,
+                "channels":         { "0": float, "1": float, … }
+            },
+            { … player 1 … }
+        ],
+        # legacy mirrors of players[0]:
+        "selected_vehicle": …,
+        "channels": …
     }
 
 No messages are expected from the client over WebSocket; it is
-receive-only.  Selection is done via the REST endpoints.
+receive-only. Selection is done via the REST endpoints.
 
 Static files
 ------------
@@ -40,19 +55,21 @@ import json
 import logging
 import threading
 import time
-from functools import wraps
 
 from flask import Flask, jsonify, send_from_directory, abort
 from flask_sock import Sock
 
 from simple_websocket import ConnectionClosed
 
+from state import NUM_PLAYERS, VehicleTaken
+
 log = logging.getLogger(__name__)
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
 
 # Minimum seconds between WebSocket pushes triggered by axis events.
-# Prevents flooding clients at gamepad polling rate (~125 Hz).
+# (Axis pushes are not currently wired: AppState only notifies on selection and
+# controller changes. Kept for when the HUD needs live stick values.)
 WS_AXIS_INTERVAL = 0.05   # 20 Hz max to clients
 
 # Directory that Flask serves static assets from.
@@ -68,7 +85,7 @@ class ControllerServer:
     Parameters
     ----------
     state   : AppState         – shared application state
-    reader  : GamepadReader    – started gamepad reader
+    reader  : GamepadManager   – started gamepad manager
     bridge  : SerialBridge     – open serial bridge
     dispatcher : Dispatcher    – started dispatcher
     vehicles   : list[Vehicle] – loaded vehicle list (from load_vehicles())
@@ -94,10 +111,8 @@ class ControllerServer:
         self._sock = Sock(self.app)
         self._register_routes()
 
-        # Hook into AppState so the server can push on changes
-        # AppState exposes an optional callback; we set it here.
-        if hasattr(self._state, "on_change"):
-            self._state.on_change = self._on_state_change
+        # AppState calls this whenever selection or controller status changes.
+        self._state.on_change = self._on_state_change
 
     # ── Route registration ────────────────────────────────────────────────────
 
@@ -125,26 +140,22 @@ class ControllerServer:
         def api_state():
             return jsonify(self._public_snapshot())
 
+        @app.route("/api/players/<int:player>/select/<vehicle_id>", methods=["POST"])
+        def api_player_select(player, vehicle_id):
+            return self._select(player, vehicle_id)
+
+        @app.route("/api/players/<int:player>/deselect", methods=["POST"])
+        def api_player_deselect(player):
+            return self._deselect(player)
+
+        # Legacy single-player aliases → player 0
         @app.route("/api/select/<vehicle_id>", methods=["POST"])
         def api_select(vehicle_id):
-            vehicle = self._find_vehicle(vehicle_id)
-            if vehicle is None:
-                abort(404, description=f"Vehicle '{vehicle_id}' not found.")
-            self._state.select(vehicle)
-            if not self._bridge.send_peer_command(vehicle.mac):
-                log.warning("Failed to send peer command for vehicle '%s' - serial port may be down.", vehicle_id)
-            snap = self._public_snapshot()
-            self._push_to_all(snap)
-            return jsonify(snap)
+            return self._select(0, vehicle_id)
 
         @app.route("/api/deselect", methods=["POST"])
         def api_deselect():
-            self._state.deselect()
-            if not self._bridge.send_peer_command(None):
-                log.warning("Failed to send peer clear command - serial port may be down.")
-            snap = self._public_snapshot()
-            self._push_to_all(snap)
-            return jsonify(snap)
+            return self._deselect(0)
 
         # ── WebSocket ─────────────────────────────────────────────────────────
 
@@ -172,7 +183,7 @@ class ControllerServer:
                     # recv with timeout so we can check close_event.
                     # Clients send nothing, so this is just a keep-alive poll.
                     try:
-                        msg = ws.receive(timeout=1)
+                        ws.receive(timeout=1)
                     except ConnectionClosed:
                         break
             finally:
@@ -180,12 +191,50 @@ class ControllerServer:
                     self._ws_clients.pop(ws, None)
                 log.info("WebSocket client disconnected. Total: %d", len(self._ws_clients))
 
+    # ── Selection logic ───────────────────────────────────────────────────────
+
+    def _select(self, player: int, vehicle_id: str):
+        if not 0 <= player < NUM_PLAYERS:
+            abort(404, description=f"Player {player} does not exist.")
+        vehicle = self._find_vehicle(vehicle_id)
+        if vehicle is None:
+            abort(404, description=f"Vehicle '{vehicle_id}' not found.")
+
+        try:
+            self._state.select(vehicle, player)
+        except VehicleTaken as exc:
+            return jsonify({
+                "error":    str(exc),
+                "taken_by": exc.player,
+                "state":    self._public_snapshot(),
+            }), 409
+
+        # TEMP (until Phase 3): the transmitter still has a single peer slot,
+        # so only player 0's vehicle is wired to the radio.
+        if player == 0:
+            if not self._bridge.send_peer_command(vehicle.mac):
+                log.warning("Failed to send peer command for vehicle '%s' - serial port may be down.", vehicle_id)
+        else:
+            log.info("Player %d selected '%s' (transmitter support pending).", player + 1, vehicle_id)
+
+        return jsonify(self._public_snapshot())
+
+    def _deselect(self, player: int):
+        if not 0 <= player < NUM_PLAYERS:
+            abort(404, description=f"Player {player} does not exist.")
+        self._state.deselect(player)
+        if player == 0:
+            if not self._bridge.send_peer_command(None):
+                log.warning("Failed to send peer clear command - serial port may be down.")
+        return jsonify(self._public_snapshot())
+
     # ── State change hook ─────────────────────────────────────────────────────
 
     def _on_state_change(self, reason: str = "axis") -> None:
         """
-        Called by AppState whenever state mutates.  Throttles axis-triggered
-        pushes to WS_AXIS_INTERVAL; selection changes push immediately.
+        Called by AppState when state mutates. Axis-triggered pushes are
+        throttled to WS_AXIS_INTERVAL; selection/controller changes push
+        immediately.
         """
         now = time.monotonic()
         if reason == "axis":
@@ -193,8 +242,7 @@ class ControllerServer:
                 return
             self._last_axis_push = now
 
-        snap = self._public_snapshot()
-        self._push_to_all(snap)
+        self._push_to_all(self._public_snapshot())
 
     # ── WebSocket helpers ─────────────────────────────────────────────────────
 
@@ -216,11 +264,9 @@ class ControllerServer:
         if dead:
             with self._ws_lock:
                 for ws in dead:
-                    self._ws_clients.pop(ws, None)
-                    try:
-                        self._ws_clients[ws].set()
-                    except KeyError:
-                        pass
+                    event = self._ws_clients.pop(ws, None)
+                    if event is not None:
+                        event.set()
 
     @staticmethod
     def _send(ws, payload: dict) -> None:
@@ -235,15 +281,17 @@ class ControllerServer:
     def _public_snapshot(self) -> dict:
         """Build the JSON payload sent to clients."""
         snap = self._state.snapshot()
-        # snapshot() already serialises selected_vehicle to a dict via to_dict()
-        vehicle = snap["selected_vehicle"]
-        if vehicle is not None and not isinstance(vehicle, dict):
-            vehicle = _vehicle_dict(vehicle)
-        return {
-            "event":            "state_update",
-            "selected_vehicle": vehicle,
+        players = [
             # JSON keys must be strings; convert int channel indices.
-            "channels":         {str(k): v for k, v in snap["channels"].items()},
+            {**p, "channels": {str(k): v for k, v in p["channels"].items()}}
+            for p in snap["players"]
+        ]
+        return {
+            "event":   "state_update",
+            "players": players,
+            # legacy mirrors of player 0
+            "selected_vehicle": players[0]["selected_vehicle"],
+            "channels":         players[0]["channels"],
         }
 
     def _find_vehicle(self, vehicle_id: str):
