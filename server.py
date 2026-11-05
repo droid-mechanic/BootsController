@@ -19,7 +19,7 @@ ws://host/ws
 The server pushes a JSON state snapshot to every connected client
 whenever anything meaningful changes:
   - A vehicle is selected or deselected
-  - A gamepad axis value changes (throttled — see WS_AXIS_INTERVAL)
+  - A gamepad axis value changes (throttled - see WS_AXIS_INTERVAL)
 
 Message format (server → client):
     {
@@ -132,7 +132,7 @@ class ControllerServer:
                 abort(404, description=f"Vehicle '{vehicle_id}' not found.")
             self._state.select(vehicle)
             if not self._bridge.send_peer_command(vehicle.mac):
-                log.warning("Failed to send peer command for vehicle '%s' — serial port may be down.", vehicle_id)
+                log.warning("Failed to send peer command for vehicle '%s' - serial port may be down.", vehicle_id)
             snap = self._public_snapshot()
             self._push_to_all(snap)
             return jsonify(snap)
@@ -141,7 +141,7 @@ class ControllerServer:
         def api_deselect():
             self._state.deselect()
             if not self._bridge.send_peer_command(None):
-                log.warning("Failed to send peer clear command — serial port may be down.")
+                log.warning("Failed to send peer clear command - serial port may be down.")
             snap = self._public_snapshot()
             self._push_to_all(snap)
             return jsonify(snap)

@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
     mgr = GamepadManager()
     mgr.start()
-    print("Listening for up to 2 gamepads — Ctrl+C to exit.")
+    print("Listening for up to 2 gamepads - Ctrl+C to exit.")
     try:
         while True:
             try:

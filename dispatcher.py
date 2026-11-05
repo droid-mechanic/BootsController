@@ -13,7 +13,7 @@ The dispatcher runs a single daemon thread that:
      matching the layout expected by tx_firmware.ino / trailer_loader_rx.ino.
   5. Updates AppState via update_channel().
   6. Transmits the full channel + button snapshot over SerialBridge on
-     *every* axis or button event — but only when a vehicle is selected.
+     *every* axis or button event - but only when a vehicle is selected.
 
 Serial disconnections are detected on write failure and trigger a
 blocking reconnect inside the thread (the queue keeps filling safely
@@ -234,7 +234,7 @@ class Dispatcher:
             return
 
         byte_index, bit_mask = entry
-        pressed = raw != 0  # evdev: 0=up, 1=down, 2=hold(repeat) — 1 and 2 both count as pressed
+        pressed = raw != 0  # evdev: 0=up, 1=down, 2=hold(repeat) - 1 and 2 both count as pressed
 
         with self._button_lock:
             if pressed:
@@ -274,7 +274,7 @@ class Dispatcher:
 
 """
 ═══════════════════════════════════════════════════════════════════════════
-REQUIRED CHANGE — serial_bridge.py
+REQUIRED CHANGE - serial_bridge.py
 ═══════════════════════════════════════════════════════════════════════════
 I don't have serial_bridge.py in this session, so I couldn't edit it
 directly. `write_channels()` now needs a second parameter (the 2-byte
@@ -311,7 +311,7 @@ tx_firmware.ino expects. If write_channels currently does something like:
                 self._serial = None
                 return False
 
-Paste in your actual serial_bridge.py and I'll make the precise edit —
+Paste in your actual serial_bridge.py and I'll make the precise edit -
 I'm guessing at the packing/framing details above since I haven't seen
 the real implementation.
 ═══════════════════════════════════════════════════════════════════════════

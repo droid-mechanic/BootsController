@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>RC Control — HUD</title>
+  <title>RC Control - HUD</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
   <style>
@@ -152,7 +152,7 @@
       color: var(--muted2);
     }
 
-    /* Square reticle — THE signature element */
+    /* Square reticle - THE signature element */
     .reticle-wrap {
       position: relative;
       flex-shrink: 0;
@@ -181,7 +181,7 @@
     .reticle::before { width: 1px; height: 100%; left: 50%; top: 0; transform: translateX(-50%); }
     .reticle::after  { height: 1px; width: 100%; top: 50%; left: 0; transform: translateY(-50%); }
 
-    /* Corner ticks — subtle framing */
+    /* Corner ticks - subtle framing */
     .reticle-corner {
       position: absolute;
       width: 8px;
@@ -211,7 +211,7 @@
       z-index: 1;
     }
 
-    /* Dead-zone ring — visible only when dot is at centre */
+    /* Dead-zone ring - visible only when dot is at centre */
     .dead-zone-ring {
       position: absolute;
       top: 50%; left: 50%;
@@ -404,7 +404,7 @@
   <header>
     <div class="wordmark">RC<span>&nbsp;//&nbsp;</span>Control</div>
     <div class="header-sep"></div>
-    <div id="vehicle-name">—</div>
+    <div id="vehicle-name">-</div>
     <div class="status">
       <div class="status-dot" id="status-dot"></div>
       <span id="status-text">Connecting</span>
@@ -452,8 +452,8 @@
         <div class="dpad-btn down"  id="dpad-down">▼</div>
       </div>
       <div class="vehicle-meta">
-        <div class="vehicle-meta-name" id="meta-name">—</div>
-        <div class="vehicle-meta-mac"  id="meta-mac">—</div>
+        <div class="vehicle-meta-name" id="meta-name">-</div>
+        <div class="vehicle-meta-mac"  id="meta-mac">-</div>
       </div>
     </div>
 
@@ -556,7 +556,7 @@
     const hx = +channels[CH.HX] || 0;
     const hy = +channels[CH.HY] || 0;
 
-    // Stick dots — map [-1,1] to [0%,100%] within reticle
+    // Stick dots - map [-1,1] to [0%,100%] within reticle
     placeDot(dotL, lx, ly);
     placeDot(dotR, rx, ry);
 
@@ -625,9 +625,9 @@
           metaMac.textContent  = vehicle.mac;
         } else {
           overlay.classList.add('visible');
-          vName.textContent    = '—';
-          metaName.textContent = '—';
-          metaMac.textContent  = '—';
+          vName.textContent    = '-';
+          metaName.textContent = '-';
+          metaMac.textContent  = '-';
         }
 
         dirty = true;

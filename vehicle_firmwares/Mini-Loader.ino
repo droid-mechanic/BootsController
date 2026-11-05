@@ -1,5 +1,5 @@
 /*
- * Mini-Loader.ino  —  ESP-NOW controlled version
+ * Mini-Loader.ino  -  ESP-NOW controlled version
  * ═══════════════════════════════════════════════
  * Converted from Bluepad32 (direct Bluetooth gamepad) to ESP-NOW,
  * matching the base-station protocol defined in tx_firmware.ino.
@@ -14,7 +14,7 @@
  *   };
  *
  * All motor/servo/light/combo logic below is unchanged from the original
- * Bluepad32 sketch — only the input source changed. byteToAxis() converts
+ * Bluepad32 sketch - only the input source changed. byteToAxis() converts
  * the 0-254 channel bytes back into the same ~-512..512 range Bluepad32's
  * ctl->axisY()/axisRX() used to provide, so the existing threshold-based
  * math (divide by 2, by 12, by 160, etc.) needed zero changes.
@@ -61,7 +61,7 @@ static inline int byteToAxis(uint8_t b) {
 
 // Defined up here (rather than near its point of use, like the original
 // sketch had it) so it's visible to Arduino's auto-generated function
-// prototypes, which get inserted right after the #include block — if
+// prototypes, which get inserted right after the #include block - if
 // ComboButton were declared later, the prototype for handleCombo() would
 // reference an undeclared type and fail to compile.
 struct ComboButton {
@@ -115,7 +115,7 @@ Servo attachmentServo;
 #define ripperMotor1 33
 
 unsigned long lastInputTime = 0;
-const unsigned long INPUT_TIMEOUT = 500;  // ms — ESP-NOW failsafe (fleet standard)
+const unsigned long INPUT_TIMEOUT = 500;  // ms - ESP-NOW failsafe (fleet standard)
 
 int buttonSwitchTime = 0;
 int lightSwitchTime = 0;

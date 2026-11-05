@@ -2,7 +2,7 @@ Environment Notes
 
  ### Static File Serving
 
- - Flask's ControllerServer.__init__ creates the app with static_folder="static" — static files are served only from
+ - Flask's ControllerServer.__init__ creates the app with static_folder="static" - static files are served only from
    the static/ directory, not from parent dirs like assets/.
  - All image assets must be placed under static/ (or static/images/) to be served.
 

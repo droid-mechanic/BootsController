@@ -77,7 +77,7 @@ def main() -> None:
 
     # ── Graceful shutdown on SIGINT / SIGTERM ─────────────────────────────────
     def _shutdown(signum, frame):
-        log.info("Shutdown signal received — stopping subsystems.")
+        log.info("Shutdown signal received - stopping subsystems.")
         controller_server.shutdown_ws_clients()
         dispatcher.stop()
         bridge.close()

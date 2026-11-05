@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install_kiosk.sh
 # ════════════════
-# Phase 9 — One-shot kiosk setup script.
+# Phase 9 - One-shot kiosk setup script.
 #
 # Run from the project root on the Raspberry Pi:
 #   chmod +x kiosk/install_kiosk.sh
@@ -86,7 +86,7 @@ if ! grep -qF "$MARKER" "$PI_HOME/.bash_profile" 2>/dev/null; then
     chown pi:pi "$PI_HOME/.bash_profile"
     echo "      Appended to ~/.bash_profile."
 else
-    echo "      ~/.bash_profile already configured — skipping."
+    echo "      ~/.bash_profile already configured - skipping."
 fi
 
 # ── 7. ~/.xinitrc ─────────────────────────────────────────────────────────

@@ -24,8 +24,8 @@ tx_firmware.ino's ControlPayload.buttons[]:
     buttons[1]  bit0=ThumbL  bit1=ThumbR  (bits 2-7 reserved)
 
 Peer command (ASCII, newline-terminated):
-    "P aa:bb:cc:dd:ee:ff\\n"   — tell the ESP32 TX which vehicle MAC to target
-    "P 00:00:00:00:00:00\\n"   — clear peer (stop transmitting)
+    "P aa:bb:cc:dd:ee:ff\\n"   - tell the ESP32 TX which vehicle MAC to target
+    "P 00:00:00:00:00:00\\n"   - clear peer (stop transmitting)
 """
 
 import logging
@@ -172,7 +172,7 @@ class SerialBridge:
         Tell the ESP32 TX which vehicle MAC to target for ESP-NOW.
 
         Pass ``None`` (or the null MAC) to clear the peer and stop
-        transmitting — call this on vehicle deselect.
+        transmitting - call this on vehicle deselect.
 
         Returns True on success, False if the port is not open or a write
         error occurs.

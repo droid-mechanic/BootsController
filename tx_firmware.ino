@@ -1,7 +1,7 @@
 /*
  * tx_firmware.ino
  * ═══════════════
- * Phase 8 — ESP32 Transmitter Firmware  (v2 — adds button bitmask)
+ * Phase 8 - ESP32 Transmitter Firmware  (v2 - adds button bitmask)
  *
  * Role
  * ----
@@ -18,18 +18,18 @@
  * Serial protocol (Pi → ESP32)
  * ----------------------------
  * CONTROL PACKET  (10 bytes, binary)
- *   Byte 0    : '<'  (0x3C) — start sentinel
+ *   Byte 0    : '<'  (0x3C) - start sentinel
  *   Bytes 1–6 : channel values, each 0–254 (centre = 127)
  *               ch0=ABS_X  ch1=ABS_Y  ch2=ABS_RX
  *               ch3=ABS_RY ch4=ABS_HAT0X ch5=ABS_HAT0Y
  *   Byte 7    : button bitmask 0  (bit0=A bit1=B bit2=X bit3=Y
  *                                  bit4=L1 bit5=R1 bit6=L2 bit7=R2)
  *   Byte 8    : button bitmask 1  (bit0=ThumbL bit1=ThumbR, bits 2-7 reserved)
- *   Byte 9    : '>'  (0x3E) — end sentinel
+ *   Byte 9    : '>'  (0x3E) - end sentinel
  *
  * PEER COMMAND  (ASCII, newline-terminated)
- *   "P aa:bb:cc:dd:ee:ff\n"   — register MAC as ESP-NOW peer
- *   "P 00:00:00:00:00:00\n"   — clear peer (stop transmitting)
+ *   "P aa:bb:cc:dd:ee:ff\n"   - register MAC as ESP-NOW peer
+ *   "P 00:00:00:00:00:00\n"   - clear peer (stop transmitting)
  *
  *
  * ESP-NOW payload (ESP32 TX → ESP32 RX on vehicle)
@@ -52,13 +52,13 @@
  *     bridge._serial.write(b"P 00:00:00:00:00:00\n")
  *
  * A convenience helper send_peer_command() in serial_bridge.py (Phase 3)
- * can wrap this — see the integration note at the bottom of this file.
+ * can wrap this - see the integration note at the bottom of this file.
  *
  * NOTE: gamepad.py / dispatcher.py need to be updated to read BTN_* evdev
  * codes and pack them into the two button bytes using the bit layout above
  * before writing the 10-byte control packet. That Pi-side change isn't
  * included here since gamepad.py/dispatcher.py weren't provided in this
- * session — happy to wire that up if you share them.
+ * session - happy to wire that up if you share them.
  *
  *
  * Board / library requirements
@@ -106,7 +106,7 @@ static uint8_t    lineIdx = 0;
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 /*
- * parseMac — parse "aa:bb:cc:dd:ee:ff" into a 6-byte array.
+ * parseMac - parse "aa:bb:cc:dd:ee:ff" into a 6-byte array.
  * Returns true on success.
  */
 static bool parseMac(const char* str, uint8_t* out) {
@@ -136,7 +136,7 @@ static bool isZeroMac(const uint8_t* mac) {
 }
 
 /*
- * registerPeer — remove any existing peer and add the new one.
+ * registerPeer - remove any existing peer and add the new one.
  */
 static void registerPeer(const uint8_t* mac) {
     if (peerAdded) {
@@ -148,7 +148,7 @@ static void registerPeer(const uint8_t* mac) {
     hasPeer = !isZeroMac(mac);
 
     if (!hasPeer) {
-        Serial.println("[TX] Peer cleared — transmit disabled.");
+        Serial.println("[TX] Peer cleared - transmit disabled.");
         return;
     }
 
@@ -179,13 +179,13 @@ static void onSent(const uint8_t* mac, esp_now_send_status_t status) {
 // ── Packet processing ─────────────────────────────────────────────────────
 
 /*
- * dispatchControl — validate and forward a complete 10-byte packet.
+ * dispatchControl - validate and forward a complete 10-byte packet.
  * buf[0] == '<', buf[9] == '>', buf[1..6] are channel bytes,
  * buf[7..8] are button bitmask bytes.
  */
 static void dispatchControl(const uint8_t* buf) {
     if (buf[0] != PKT_START || buf[PKT_LEN - 1] != PKT_END) {
-        Serial.println("[TX] Malformed packet — sentinels invalid.");
+        Serial.println("[TX] Malformed packet - sentinels invalid.");
         return;
     }
 
@@ -202,7 +202,7 @@ static void dispatchControl(const uint8_t* buf) {
 }
 
 /*
- * handleLine — process a newline-terminated ASCII command.
+ * handleLine - process a newline-terminated ASCII command.
  * Currently only the 'P' (peer) command is defined.
  */
 static void handleLine(const char* line) {
@@ -247,7 +247,7 @@ void loop() {
 
         // ── Binary packet path ──────────────────────────────────────────
         if (byte == PKT_START && !inPacket) {
-            // Start of a new binary packet — reset and begin accumulating
+            // Start of a new binary packet - reset and begin accumulating
             inPacket  = true;
             binIdx    = 0;
             binBuf[binIdx++] = byte;
@@ -264,8 +264,8 @@ void loop() {
                 binIdx   = 0;
                 dispatchControl(binBuf);
             } else if (binIdx > PKT_LEN) {
-                // Overflow — something went wrong; reset
-                Serial.println("[TX] Packet overrun — resync.");
+                // Overflow - something went wrong; reset
+                Serial.println("[TX] Packet overrun - resync.");
                 inPacket = false;
                 binIdx   = 0;
             }
@@ -281,12 +281,12 @@ void loop() {
             }
         } else if (byte != PKT_START) {
             // Accumulate printable ASCII; ignore stray '<' in ASCII path
-            // (a '<' always starts a binary packet instead — handled above)
+            // (a '<' always starts a binary packet instead - handled above)
             if (lineIdx < PEER_CMD_MAXLEN - 1) {
                 lineBuf[lineIdx++] = (char)byte;
             } else {
-                // Line overflow — discard
-                Serial.println("[TX] ASCII line overflow — discarding.");
+                // Line overflow - discard
+                Serial.println("[TX] ASCII line overflow - discarding.");
                 lineIdx = 0;
             }
         }
@@ -296,7 +296,7 @@ void loop() {
 
 /*
  * ═══════════════════════════════════════════════════════════════════════════
- * INTEGRATION NOTE — Pi side (serial_bridge.py additions)
+ * INTEGRATION NOTE - Pi side (serial_bridge.py additions)
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Add this method to SerialBridge in serial_bridge.py:
@@ -334,7 +334,7 @@ void loop() {
  *
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * BUTTON BITMASK — bit layout reference for the Pi side packer
+ * BUTTON BITMASK - bit layout reference for the Pi side packer
  * ═══════════════════════════════════════════════════════════════════════════
  *
  *   buttons[0]  bit0=A  bit1=B  bit2=X  bit3=Y  bit4=L1  bit5=R1  bit6=L2  bit7=R2
@@ -342,7 +342,7 @@ void loop() {
  *
  * dispatcher.py should build these two bytes from the evdev BTN_* key state
  * (BTN_SOUTH/BTN_EAST/BTN_NORTH/BTN_WEST, BTN_TL/BTN_TR/BTN_TL2/BTN_TR2,
- * BTN_THUMBL/BTN_THUMBR — see Evdev_Switch_classification.txt) and append
+ * BTN_THUMBL/BTN_THUMBR - see Evdev_Switch_classification.txt) and append
  * them to the 6 axis bytes before the '<' ... '>' frame is written.
  * ═══════════════════════════════════════════════════════════════════════════
  */

@@ -30,7 +30,7 @@ Servo ripperServo;
 #define ripperMotor1 32     // /
 
 unsigned long lastInputTime = 0;
-const unsigned long INPUT_TIMEOUT = 40;  // ms — adjust if needed
+const unsigned long INPUT_TIMEOUT = 40;  // ms - adjust if needed
 
 int lightSwitchButtonTime = 0;
 int lightSwitchTime = 0;

@@ -1,5 +1,5 @@
 /*
- * Mini-Dozer.ino  —  ESP-NOW controlled version
+ * Mini-Dozer.ino  -  ESP-NOW controlled version
  * ═════════════════════════════════════════════════════════════════════════════
  * Converted from Bluepad32 (direct Bluetooth gamepad) to ESP-NOW,
  * matching the base-station protocol defined in tx_firmware.ino.
@@ -12,7 +12,7 @@
  *   };
  *
  * All motor/servo/light/combo logic below is unchanged from the original
- * Bluepad32 sketch — only the input source changed. byteToAxis() converts
+ * Bluepad32 sketch - only the input source changed. byteToAxis() converts
  * the 0-254 channel bytes back into the same ~-512..512 range Bluepad32's
  * ctl->axisY()/axisRX() used to provide, so the existing threshold-based
  * math (divide by 2, by 12, by 160, etc.) needed zero changes.
@@ -103,7 +103,7 @@ void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
 Servo ripperServo;
 
 unsigned long lastInputTime = 0;
-const unsigned long INPUT_TIMEOUT = 500;  // ms — ESP-NOW failsafe (fleet standard)
+const unsigned long INPUT_TIMEOUT = 500;  // ms - ESP-NOW failsafe (fleet standard)
 
 int buttonSwitchTime = 0;
 int lightSwitchTime = 0;

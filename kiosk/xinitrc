@@ -1,7 +1,7 @@
 #!/bin/sh
 # ~/.xinitrc  (for the pi user)
 #
-# Phase 9 — Minimal X session: disable screen blanking, start openbox,
+# Phase 9 - Minimal X session: disable screen blanking, start openbox,
 # then let systemd's rc-kiosk.service handle Chromium.
 #
 # Copy to /home/pi/.xinitrc:

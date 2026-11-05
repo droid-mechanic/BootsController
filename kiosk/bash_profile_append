@@ -1,6 +1,6 @@
 # ~/.bash_profile  (append this block for the pi user)
 #
-# Phase 9 — Start X automatically on tty1 after autologin.
+# Phase 9 - Start X automatically on tty1 after autologin.
 # The X session runs openbox (lightweight WM) so Chromium has a window
 # manager, then immediately hands off to rc-kiosk.service.
 #

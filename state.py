@@ -1,6 +1,6 @@
-# state.py — Phase 2: Vehicle registry and shared app state
+# state.py - Phase 2: Vehicle registry and shared app state
 #
-# All vehicles share the same fixed channel layout — no per-vehicle axis
+# All vehicles share the same fixed channel layout - no per-vehicle axis
 # remapping is needed. A Vehicle is pure metadata (name, image, target MAC).
 # AppState is a singleton shared across all backend threads.
 #
@@ -96,7 +96,7 @@ class AppState:
     def __init__(self, vehicles_path: str | Path = "vehicles.json"):
         self.lock = threading.RLock()
 
-        # Vehicle registry — loaded once at startup, never mutated
+        # Vehicle registry - loaded once at startup, never mutated
         self.vehicles: list[Vehicle] = load_vehicles(vehicles_path)
         self._vehicle_index: dict[str, Vehicle] = {v.id: v for v in self.vehicles}
 
@@ -106,7 +106,7 @@ class AppState:
         # Current UI screen
         self.screen: str = "selection"   # "selection" | "hud"
 
-        # Live channel values — updated by the dispatcher each event.
+        # Live channel values - updated by the dispatcher each event.
         # Index matches CHANNEL_MAP / CHANNEL_NAMES.
         self.channel_state: list[int] = [0] * NUM_CHANNELS
 
@@ -148,7 +148,7 @@ class AppState:
 
     def snapshot(self) -> dict:
         """
-        Return a JSON-serializable snapshot of the current state — used by
+        Return a JSON-serializable snapshot of the current state - used by
         the Flask WebSocket broadcaster.
         """
         with self.lock:
@@ -163,7 +163,7 @@ class AppState:
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _reset_channels(self) -> None:
-        """Zero all channel values (called without acquiring lock — caller holds it)."""
+        """Zero all channel values (called without acquiring lock - caller holds it)."""
         self.channel_state = [0] * NUM_CHANNELS
 
 
@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     print(f"Loaded {len(state.vehicles)} vehicle(s):")
     for v in state.vehicles:
-        print(f"  [{v.id}]  {v.name}  —  MAC {v.esp32_mac}  —  image: {v.image}")
+        print(f"  [{v.id}]  {v.name}  -  MAC {v.esp32_mac}  -  image: {v.image}")
 
     print()
 
@@ -198,7 +198,7 @@ if __name__ == "__main__":
         (ecodes.ABS_RY,   -3200),    # Right Stick Y
         (ecodes.ABS_HAT0X,    1),    # D-Pad right
         (ecodes.ABS_HAT0Y,    0),    # D-Pad centred
-        (999,                 0),    # unknown code — should return False
+        (999,                 0),    # unknown code - should return False
     ]
     for code, value in test_events:
         applied = state.update_channel(code, value)

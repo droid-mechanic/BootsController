@@ -1,5 +1,5 @@
 /*
- * Dozer.ino — ESP-NOW receiver firmware (base station version)
+ * Dozer.ino - ESP-NOW receiver firmware (base station version)
  *
  * Converted from Bluepad32 direct-Bluetooth control. The vehicle now
  * receives the standard ControlPayload from the base station's ESP32 TX

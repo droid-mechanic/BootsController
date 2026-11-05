@@ -1,6 +1,6 @@
 # /etc/systemd/system/rc-controller.service
 #
-# Phase 9 — RC Controller backend service
+# Phase 9 - RC Controller backend service
 #
 # Starts app.py on boot, restarts on failure, runs as the 'pi' user
 # so evdev and serial group permissions are inherited correctly.
@@ -23,7 +23,7 @@ Type=simple
 User=pi
 Group=pi
 
-# ── Paths — edit WorkingDirectory to match your project location ──────────
+# ── Paths - edit WorkingDirectory to match your project location ──────────
 WorkingDirectory=/home/pi/rc-controller
 ExecStart=/home/pi/rc-controller/.venv/bin/python3 app.py
 

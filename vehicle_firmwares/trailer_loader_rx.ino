@@ -1,13 +1,13 @@
 /*
  * trailer_loader_rx.ino
  * ══════════════════════
- * Vehicle-side firmware — converted from the original Bluepad32 gamepad
+ * Vehicle-side firmware - converted from the original Bluepad32 gamepad
  * sketch to receive its control inputs from the base-station transmitter
  * (tx_firmware.ino) over ESP-NOW instead of pairing directly to a
  * Bluetooth gamepad.
  *
  * All motor/servo/light/trailer logic below is unchanged from the
- * original sketch — only the *source* of the control values changed:
+ * original sketch - only the *source* of the control values changed:
  * Bluepad32 ControllerPtr reads → ESP-NOW ControlPayload fields.
  *
  * ESP-NOW payload (from tx_firmware.ino)
@@ -31,7 +31,7 @@
  *
  * Board / library requirements
  * -----------------------------
- * Board   : ESP32 (Arduino-ESP32 core 2.x — matches tx_firmware.ino)
+ * Board   : ESP32 (Arduino-ESP32 core 2.x - matches tx_firmware.ino)
  * Library : ESP32Servo (by Kevin Harrington), esp_now.h, WiFi.h
  */
 
@@ -146,7 +146,7 @@ static bool failsafeActive = false;
 // ── Helpers: convert raw channel/button bytes into original control shapes ─
 
 /*
- * byteToAxis — convert a 0-254 (centre=127) channel byte into roughly the
+ * byteToAxis - convert a 0-254 (centre=127) channel byte into roughly the
  * same numeric range the original Bluepad32 axis functions returned
  * (~-508..508), so the existing threshold-based logic below (comparisons
  * against 80, 90, 110, 200, etc.) keeps working unmodified.
@@ -157,7 +157,7 @@ static inline int16_t byteToAxis(uint8_t b) {
 }
 
 /*
- * decodeDpad — reconstruct the same single-direction dpad value the
+ * decodeDpad - reconstruct the same single-direction dpad value the
  * original Bluepad32 ctl->dpad() bitmask produced (1=UP 2=DOWN 4=RIGHT
  * 8=LEFT, 0=centered) from the HAT0X/HAT0Y axis bytes.
  */
@@ -612,7 +612,7 @@ void loop() {
 
     if (timedOut) {
         if (!failsafeActive) {
-            Serial.println("[RX] Link lost — applying failsafe stop.");
+            Serial.println("[RX] Link lost - applying failsafe stop.");
             applyFailsafe();
             failsafeActive = true;
         }

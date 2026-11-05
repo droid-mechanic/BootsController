@@ -1,7 +1,7 @@
 /*
  * Bombi_ESPNOW.ino
  * ════════════════
- * Bombi vehicle firmware — ESP-NOW receiver for the Base Station.
+ * Bombi vehicle firmware - ESP-NOW receiver for the Base Station.
  *
  * Converted from Bluepad32 direct-Bluetooth control. The vehicle now
  * receives the standard 8-byte ControlPayload from the fleet transmitter:
@@ -18,7 +18,7 @@
  * boot. Register it in vehicles.json on the Pi.
  *
  * Board / libs: ESP32 (Arduino-ESP32 core 2.x or 3.x), ESP32Servo, Cdrv8833.
- * (Bluepad32 is no longer required — use a regular ESP32 board package,
+ * (Bluepad32 is no longer required - use a regular ESP32 board package,
  *  not the Bluepad32 one, or leave it; it just won't be used.)
  */
 

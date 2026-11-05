@@ -1,6 +1,6 @@
 # /etc/systemd/system/rc-kiosk.service
 #
-# Phase 9 — RC Controller kiosk browser
+# Phase 9 - RC Controller kiosk browser
 #
 # Launches Chromium in full-screen kiosk mode after the backend is up.
 # Runs on the local framebuffer display (no desktop environment needed).
