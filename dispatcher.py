@@ -197,18 +197,8 @@ class Dispatcher:
             log.info("Dispatcher loop exited.")
 
     def _handle_event(self, event: dict) -> None:
-        """
-        Process a single event dict from GamepadReader.
-
-        Expected shapes::
-
-            {"type": "axis", "code": <int>, "value": <int>}   # analog stick / d-pad
-            {"type": "key",  "code": <int>, "value": <int>}   # button (0=up,1=down,2=hold)
-
-        Both axis and button events update shared state and trigger a
-        transmit — the vehicle needs to react to button presses just as
-        promptly as stick movement.
-        """
+        if event.get("player", 0) != 0:      # TEMP: only player 1 drives until Phase 3
+            return
         etype = event.get("type")
 
         if etype == "axis":

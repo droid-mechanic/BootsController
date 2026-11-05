@@ -27,7 +27,7 @@ logging.basicConfig(
 log = logging.getLogger("app")
 
 # ── Project imports ───────────────────────────────────────────────────────────
-from gamepad       import GamepadReader
+from gamepad       import GamepadManager
 from state         import AppState, load_vehicles
 from serial_bridge import SerialBridge
 from dispatcher    import Dispatcher
@@ -53,7 +53,7 @@ def main() -> None:
     state = AppState()
 
     # ── Gamepad ───────────────────────────────────────────────────────────────
-    reader = GamepadReader(GAMEPAD_PATH)
+    reader = GamepadManager()
     reader.start()
 
     # ── Serial bridge ─────────────────────────────────────────────────────────
