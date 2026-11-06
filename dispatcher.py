@@ -1,39 +1,27 @@
 # dispatcher.py
 """
-Phase 4 – Dispatcher
+Dispatcher (two-player)
 Connects the three subsystems:
 
-    GamepadReader  →  AppState  →  SerialBridge
+    GamepadManager  →  AppState  →  SerialBridge
 
 The dispatcher runs a single daemon thread that:
-  1. Drains events from GamepadReader's queue.
-  2. Normalises raw evdev axis values to [-1.0, 1.0].
-  3. Applies a dead zone to analog sticks (values snap to 0.0 inside it).
-  4. Tracks button state as a 2-byte bitmask (see BUTTON_BIT_MAP below),
-     matching the layout expected by tx_firmware.ino / trailer_loader_rx.ino.
-  5. Updates AppState via update_channel().
-  6. Transmits the full channel + button snapshot over SerialBridge on
-     *every* axis or button event - but only when a vehicle is selected.
+  1. Drains tagged events from GamepadManager's queue.
+  2. Normalises raw evdev axis values to [-1.0, 1.0] and applies a dead zone.
+  3. Tracks each player's buttons as a 2-byte bitmask (see BUTTON_BIT_MAP),
+     matching the layout expected by tx_firmware.ino / the vehicle firmware.
+  4. Updates AppState (per-player channels, controller connect/disconnect).
+  5. At a fixed rate (TX_HZ), sends one control packet per player that holds
+     a vehicle. Transmitting on a timer rather than on every input event
+     keeps the vehicles' 500 ms failsafe fed even when the sticks are held
+     still, and caps serial/radio traffic regardless of gamepad poll rate.
+  6. Keeps the transmitter's peer table in step with AppState: when a
+     player's vehicle changes it sends the new peer; every PEER_REFRESH
+     seconds it re-sends all peers, so a transmitter that reset is healed
+     without any action from the operators.
 
-Serial disconnections are detected on write failure and trigger a
-blocking reconnect inside the thread (the queue keeps filling safely
-in the meantime).
-
-Usage::
-
-    from gamepad      import GamepadReader
-    from state        import AppState
-    from serial_bridge import SerialBridge
-    from dispatcher   import Dispatcher
-
-    reader = GamepadReader()
-    state  = AppState()
-    bridge = SerialBridge()
-
-    d = Dispatcher(reader, state, bridge)
-    d.start()
-    # … Flask app runs, vehicles get selected, etc. …
-    d.stop()
+Serial disconnections are detected on write failure and trigger a blocking
+reconnect inside the thread (the event queue keeps filling safely).
 """
 
 import logging
@@ -42,6 +30,8 @@ import threading
 import time
 
 from evdev import ecodes
+
+from state import NUM_PLAYERS
 
 log = logging.getLogger(__name__)
 
@@ -59,15 +49,19 @@ HAT_AXES    = frozenset({ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y})
 # Matches the flat value reported by the Switch controller (500).
 DEAD_ZONE   = 500
 
-# How long (seconds) to wait between serial reconnect attempts.
-RECONNECT_DELAY = 2.0
+# ── Timing ────────────────────────────────────────────────────────────────────
 
-# Queue drain timeout – keeps the thread responsive to stop().
-QUEUE_TIMEOUT   = 0.1
+TX_HZ          = 50                # control packets per second, per player
+TX_PERIOD      = 1.0 / TX_HZ
+PEER_REFRESH   = 2.0               # seconds between full peer re-sends
+RECONNECT_DELAY = 2.0              # seconds between serial reconnect attempts
+QUEUE_TIMEOUT   = 0.1              # keeps the thread responsive to stop()
+
+_UNSET = object()   # "unknown what the transmitter has" (vs None = "cleared")
 
 # ── Button bit layout ──────────────────────────────────────────────────────
-# Must match the ControlPayload.buttons[] layout in tx_firmware.ino /
-# trailer_loader_rx.ino:
+# Must match the ControlPayload.buttons[] layout in tx_firmware.ino and the
+# vehicle firmware:
 #
 #   buttons[0]  bit0=A  bit1=B  bit2=X  bit3=Y  bit4=L1  bit5=R1  bit6=L2  bit7=R2
 #   buttons[1]  bit0=ThumbL  bit1=ThumbR  (bits 2-7 reserved)
@@ -113,11 +107,11 @@ def _normalise(code: int, raw: int) -> float:
 
 class Dispatcher:
     """
-    Bridges GamepadReader → AppState → SerialBridge in a background thread.
+    Bridges GamepadManager → AppState → SerialBridge in a background thread.
 
     Parameters
     ----------
-    reader : GamepadReader
+    reader : GamepadManager
         Must already be started (``reader.start()`` called).
     state : AppState
         Shared application state singleton.
@@ -137,9 +131,13 @@ class Dispatcher:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
-        # 2-byte button bitmask, see BUTTON_BIT_MAP above.
+        # One 2-byte button bitmask per player, see BUTTON_BIT_MAP above.
         self._button_lock = threading.Lock()
-        self._buttons = bytearray(2)
+        self._buttons = [bytearray(2) for _ in range(NUM_PLAYERS)]
+
+        # What the transmitter's slot table is believed to hold, per slot:
+        # a MAC string, None (cleared), or _UNSET (unknown → resend).
+        self._peer_sent: list = [_UNSET] * NUM_PLAYERS
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -168,10 +166,10 @@ class Dispatcher:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def button_snapshot(self) -> bytes:
-        """Thread-safe read of the current 2-byte button bitmask (e.g. for HUD display)."""
+    def button_snapshot(self, player: int = 0) -> bytes:
+        """Thread-safe read of a player's 2-byte button bitmask."""
         with self._button_lock:
-            return bytes(self._buttons)
+            return bytes(self._buttons[player])
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -180,91 +178,155 @@ class Dispatcher:
         if self._auto_open:
             self._bridge.open()
 
-        log.info("Dispatcher loop running.")
+        next_tx      = time.monotonic()
+        next_refresh = next_tx
 
         try:
             while not self._stop_event.is_set():
+                # Wait for an event, but never past the next transmit tick.
+                timeout = max(0.0, min(next_tx - time.monotonic(), QUEUE_TIMEOUT))
                 try:
-                    event = self._reader.queue.get(timeout=QUEUE_TIMEOUT)
+                    event = self._reader.queue.get(timeout=timeout)
                 except queue.Empty:
-                    continue
+                    event = None
 
-                self._handle_event(event)
+                if event is not None:
+                    self._handle_event(event)
 
+                now = time.monotonic()
+                if now >= next_tx:
+                    refresh = now >= next_refresh
+                    if refresh:
+                        next_refresh = now + PEER_REFRESH
+                    self._tick(force_peers=refresh)
+                    next_tx = now + TX_PERIOD
         finally:
+            self._release_all()
             if self._auto_open:
                 self._bridge.close()
             log.info("Dispatcher loop exited.")
 
+    # ── Input handling ────────────────────────────────────────────────────────
+
     def _handle_event(self, event: dict) -> None:
+        """
+        Process a single event dict from GamepadManager::
+
+            {"player": n, "type": "axis",       "code": <int>, "value": <int>}
+            {"player": n, "type": "key",        "code": <int>, "value": <int>}
+            {"player": n, "type": "connect",    "name": <str>}
+            {"player": n, "type": "disconnect"}
+
+        Events only update state; transmission happens on the timer.
+        """
         player = event.get("player", 0)
-        etype  = event.get("type")
-
-        if etype == "connect":
-            self._state.set_controller(player, True, event.get("name"))
+        if not 0 <= player < NUM_PLAYERS:
             return
-        if etype == "disconnect":
-            self._state.set_controller(player, False)
-            return
-
-        if player != 0:        # TEMP until Phase 3: only player 1 drives
-            return
+        etype = event.get("type")
 
         if etype == "axis":
-            self._handle_axis(event)
+            self._handle_axis(player, event)
         elif etype == "key":
-            self._handle_key(event)
-        else:
-            # sync / other events – not consumed here.
-            return
+            self._handle_key(player, event)
+        elif etype == "connect":
+            self._state.set_controller(player, True, event.get("name"))
+        elif etype == "disconnect":
+            # Never leave a stuck stick or button: AppState zeroes the axes,
+            # we zero the buttons. The vehicle keeps receiving neutral frames.
+            with self._button_lock:
+                self._buttons[player][:] = bytes(2)
+            self._state.set_controller(player, False)
 
-        self._transmit()
-
-    def _handle_axis(self, event: dict) -> None:
+    def _handle_axis(self, player: int, event: dict) -> None:
         code  = event["code"]
-        raw   = event["value"]
-        value = _normalise(code, raw)
+        value = _normalise(code, event["value"])
 
         # Map axis code → channel index via AppState's CHANNEL_MAP.
         channel = self._state.CHANNEL_MAP.get(code)
         if channel is None:
             log.debug("Dispatcher: unmapped axis code %d, skipping.", code)
             return
-        # log.info("axis ch=%d, val=%.2f", channel, value)
+        self._state.update_channel(channel, value, player)
 
-        self._state.update_channel(channel, value)
-
-    def _handle_key(self, event: dict) -> None:
+    def _handle_key(self, player: int, event: dict) -> None:
         code  = event["code"]
-        raw   = event["value"]
         entry = BUTTON_BIT_MAP.get(code)
         if entry is None:
             log.debug("Dispatcher: unmapped button code %d, skipping.", code)
             return
 
         byte_index, bit_mask = entry
-        pressed = raw != 0  # evdev: 0=up, 1=down, 2=hold(repeat) - 1 and 2 both count as pressed
+        pressed = event["value"] != 0  # evdev: 0=up, 1=down, 2=hold(repeat)
 
         with self._button_lock:
             if pressed:
-                self._buttons[byte_index] |= bit_mask
+                self._buttons[player][byte_index] |= bit_mask
             else:
-                self._buttons[byte_index] &= ~bit_mask & 0xFF
+                self._buttons[player][byte_index] &= ~bit_mask & 0xFF
 
-    def _transmit(self) -> None:
-        """Send the current channel + button snapshot over serial, if a vehicle is selected."""
-        snapshot = self._state.snapshot()
-        if snapshot["selected_vehicle"] is None:
+    # ── Transmit ──────────────────────────────────────────────────────────────
+
+    def _tick(self, force_peers: bool) -> None:
+        """One transmit cycle: sync peers, then one packet per active player."""
+        players = self._state.snapshot()["players"]
+
+        if not self._sync_peers(players, force_peers):
             return
 
-        buttons = self.button_snapshot()
+        for pl in players:
+            if pl["selected_vehicle"] is None:
+                continue
+            p  = pl["player"]
+            ok = self._bridge.write_channels(p, pl["channels"], self.button_snapshot(p))
+            if not ok:
+                self._serial_failed()
+                return
 
-        ok = self._bridge.write_channels(snapshot["channels"], buttons)
-        if not ok:
-            log.warning("Serial write failed – attempting reconnect.")
-            self._reconnect()
+    def _sync_peers(self, players: list[dict], force: bool) -> bool:
+        """
+        Make the transmitter's slot table match AppState. Returns False if
+        the serial link failed (a reconnect has already been attempted).
+        """
+        for pl in players:
+            p       = pl["player"]
+            vehicle = pl["selected_vehicle"]
+            mac     = vehicle["mac"] if vehicle else None
+            prev    = self._peer_sent[p]
+
+            if not force and prev == mac:
+                continue
+
+            # Leaving a vehicle: send a neutral frame first so it stops now
+            # instead of waiting out its 500 ms failsafe.
+            if isinstance(prev, str) and prev != mac:
+                self._bridge.write_channels(p, {}, bytes(2))
+
+            if not self._bridge.send_peer_command(p, mac):
+                self._serial_failed()
+                return False
+
+            if prev != mac:
+                log.info("Player %d → %s", p + 1, vehicle["name"] if vehicle else "no vehicle")
+            self._peer_sent[p] = mac
+        return True
+
+    def _release_all(self) -> None:
+        """Best-effort on shutdown: stop and unlink every vehicle."""
+        try:
+            for p in range(NUM_PLAYERS):
+                if isinstance(self._peer_sent[p], str):
+                    self._bridge.write_channels(p, {}, bytes(2))
+                self._bridge.send_peer_command(p, None)
+        except Exception:
+            log.debug("Release on shutdown failed.", exc_info=True)
 
     # ── Reconnect ─────────────────────────────────────────────────────────────
+
+    def _serial_failed(self) -> None:
+        log.warning("Serial write failed – attempting reconnect.")
+        # The transmitter probably reset with the port: resend every peer.
+        self._peer_sent = [_UNSET] * NUM_PLAYERS
+        self._reconnect()
 
     def _reconnect(self) -> None:
         """
@@ -279,49 +341,3 @@ class Dispatcher:
             except Exception as exc:
                 log.warning("Reconnect failed (%s) – retrying in %.1fs", exc, RECONNECT_DELAY)
                 time.sleep(RECONNECT_DELAY)
-
-
-"""
-═══════════════════════════════════════════════════════════════════════════
-REQUIRED CHANGE - serial_bridge.py
-═══════════════════════════════════════════════════════════════════════════
-I don't have serial_bridge.py in this session, so I couldn't edit it
-directly. `write_channels()` now needs a second parameter (the 2-byte
-button bitmask) and must frame a 10-byte packet instead of 8:
-
-    < ch0 ch1 ch2 ch3 ch4 ch5 btn0 btn1 >
-
-where each ch is a single byte 0-254 (centre=127), matching what
-tx_firmware.ino expects. If write_channels currently does something like:
-
-    def write_channels(self, channels: list[float]) -> bool:
-        payload = bytes(
-            int((v + 1.0) / 2.0 * 254) for v in channels
-        )
-        frame = b'<' + payload + b'>'
-        ...
-
-...the fix is just to extend the signature and frame:
-
-    def write_channels(self, channels: list[float], buttons: bytes) -> bool:
-        payload = bytes(
-            int((v + 1.0) / 2.0 * 254) for v in channels
-        )
-        frame = b'<' + payload + bytes(buttons) + b'>'
-        with self._lock:
-            if not self.is_connected:
-                return False
-            try:
-                self._serial.write(frame)
-                return True
-            except serial.serialutil.SerialException as exc:
-                log.error("write_channels error: %s", exc)
-                self._serial.close()
-                self._serial = None
-                return False
-
-Paste in your actual serial_bridge.py and I'll make the precise edit -
-I'm guessing at the packing/framing details above since I haven't seen
-the real implementation.
-═══════════════════════════════════════════════════════════════════════════
-"""

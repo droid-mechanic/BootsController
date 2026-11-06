@@ -1,7 +1,7 @@
 /*
  * tx_firmware.ino
  * ═══════════════
- * Phase 8 - ESP32 Transmitter Firmware  (v2 - adds button bitmask)
+ * ESP32 Transmitter Firmware  (v3 - two player slots)
  *
  * Role
  * ----
@@ -10,26 +10,34 @@
  *
  *   1. Reads serial data from the Pi at 115 200 baud.
  *   2. Parses two command types:
- *        • Control packets  → 10-byte frame, forwarded via ESP-NOW
- *        • Peer commands    → ASCII line, updates the registered peer MAC
- *   3. Transmits control payloads to the registered peer via ESP-NOW.
+ *        • Control packets  → 11-byte frame naming a slot, forwarded via ESP-NOW
+ *        • Peer commands    → ASCII line, sets the vehicle MAC for a slot
+ *   3. Transmits each control payload to the vehicle registered for its slot.
+ *
+ * A "slot" is one operator (0 or 1). Each slot targets its own vehicle, so
+ * two operators can drive two different vehicles at the same time.
  *
  *
  * Serial protocol (Pi → ESP32)
  * ----------------------------
- * CONTROL PACKET  (10 bytes, binary)
- *   Byte 0    : '<'  (0x3C) - start sentinel
- *   Bytes 1–6 : channel values, each 0–254 (centre = 127)
- *               ch0=ABS_X  ch1=ABS_Y  ch2=ABS_RX
- *               ch3=ABS_RY ch4=ABS_HAT0X ch5=ABS_HAT0Y
- *   Byte 7    : button bitmask 0  (bit0=A bit1=B bit2=X bit3=Y
- *                                  bit4=L1 bit5=R1 bit6=L2 bit7=R2)
- *   Byte 8    : button bitmask 1  (bit0=ThumbL bit1=ThumbR, bits 2-7 reserved)
- *   Byte 9    : '>'  (0x3E) - end sentinel
+ * CONTROL PACKET  (11 bytes, binary)
+ *   Byte 0     : '<'  (0x3C) - start sentinel
+ *   Byte 1     : slot, 0 or 1
+ *   Bytes 2–7  : channel values, each 0–254 (centre = 127)
+ *                ch0=ABS_X  ch1=ABS_Y  ch2=ABS_RX
+ *                ch3=ABS_RY ch4=ABS_HAT0X ch5=ABS_HAT0Y
+ *   Byte 8     : button bitmask 0  (bit0=A bit1=B bit2=X bit3=Y
+ *                                   bit4=L1 bit5=R1 bit6=L2 bit7=R2)
+ *   Byte 9     : button bitmask 1  (bit0=ThumbL bit1=ThumbR, bits 2-7 reserved)
+ *   Byte 10    : '>'  (0x3E) - end sentinel
  *
  * PEER COMMAND  (ASCII, newline-terminated)
- *   "P aa:bb:cc:dd:ee:ff\n"   - register MAC as ESP-NOW peer
- *   "P 00:00:00:00:00:00\n"   - clear peer (stop transmitting)
+ *   "P <slot> aa:bb:cc:dd:ee:ff\n"   - slot targets this vehicle MAC
+ *   "P <slot> 00:00:00:00:00:00\n"   - clear the slot (stop transmitting)
+ *
+ * Peer commands are idempotent: re-sending the same MAC is a no-op. The Pi
+ * re-sends them every couple of seconds, so a transmitter reset recovers
+ * on its own.
  *
  *
  * ESP-NOW payload (ESP32 TX → ESP32 RX on vehicle)
@@ -38,27 +46,8 @@
  *     uint8_t ch[6];        // raw channel bytes, identical to serial packet
  *     uint8_t buttons[2];   // raw button bitmask bytes, identical to serial packet
  * };
- * 8 bytes.  The vehicle firmware interprets them however it likes.
- *
- *
- * Integration with app.py (Pi side)
- * ----------------------------------
- * When AppState.select(vehicle) fires, app.py should write:
- *
- *     bridge._serial.write(f"P {vehicle.mac}\n".encode())
- *
- * When AppState.deselect() fires:
- *
- *     bridge._serial.write(b"P 00:00:00:00:00:00\n")
- *
- * A convenience helper send_peer_command() in serial_bridge.py (Phase 3)
- * can wrap this - see the integration note at the bottom of this file.
- *
- * NOTE: gamepad.py / dispatcher.py need to be updated to read BTN_* evdev
- * codes and pack them into the two button bytes using the bit layout above
- * before writing the 10-byte control packet. That Pi-side change isn't
- * included here since gamepad.py/dispatcher.py weren't provided in this
- * session - happy to wire that up if you share them.
+ * 8 bytes - unchanged, so vehicle firmware needs no modification. Vehicles
+ * are addressed by destination MAC; the slot never goes over the air.
  *
  *
  * Board / library requirements
@@ -78,11 +67,12 @@ static constexpr uint8_t  PKT_START        = '<';
 static constexpr uint8_t  PKT_END          = '>';
 static constexpr uint8_t  NUM_CHANNELS     = 6;
 static constexpr uint8_t  NUM_BUTTON_BYTES = 2;
-static constexpr uint8_t  PKT_LEN          = 1 + NUM_CHANNELS + NUM_BUTTON_BYTES + 1;  // 10
+static constexpr uint8_t  NUM_SLOTS        = 2;   // one per operator
+static constexpr uint8_t  PKT_LEN          = 1 + 1 + NUM_CHANNELS + NUM_BUTTON_BYTES + 1;  // 11
 
-// Maximum length of a peer command line incl. newline
-// "P aa:bb:cc:dd:ee:ff\n" = 22 chars
-static constexpr uint8_t  PEER_CMD_MAXLEN = 24;
+// Maximum length of a peer command line incl. CR/LF
+// "P 0 aa:bb:cc:dd:ee:ff\n" = 22 chars
+static constexpr uint8_t  PEER_CMD_MAXLEN = 28;
 
 // ── ESP-NOW payload ───────────────────────────────────────────────────────
 struct __attribute__((packed)) ControlPayload {
@@ -91,9 +81,8 @@ struct __attribute__((packed)) ControlPayload {
 };
 
 // ── State ─────────────────────────────────────────────────────────────────
-static uint8_t    peerMac[6]   = {0};
-static bool       hasPeer      = false;
-static bool       peerAdded    = false;   // tracks esp_now_add_peer state
+static uint8_t    peerMac[NUM_SLOTS][6] = {};
+static bool       hasPeer[NUM_SLOTS]    = {};   // slot has a registered ESP-NOW peer
 
 // Serial receive buffers
 static uint8_t    binBuf[PKT_LEN];        // binary packet accumulator
@@ -136,37 +125,57 @@ static bool isZeroMac(const uint8_t* mac) {
 }
 
 /*
- * registerPeer - remove any existing peer and add the new one.
+ * macInUseByOther - true if another slot already targets this MAC.
  */
-static void registerPeer(const uint8_t* mac) {
-    if (peerAdded) {
-        esp_now_del_peer(peerMac);
-        peerAdded = false;
+static bool macInUseByOther(uint8_t slot, const uint8_t* mac) {
+    for (uint8_t s = 0; s < NUM_SLOTS; s++) {
+        if (s != slot && hasPeer[s] && memcmp(peerMac[s], mac, 6) == 0) return true;
+    }
+    return false;
+}
+
+/*
+ * registerPeer - point a slot at a vehicle MAC (all zeros clears the slot).
+ * Idempotent: the Pi re-sends peers periodically, and an unchanged request
+ * does nothing.
+ */
+static void registerPeer(uint8_t slot, const uint8_t* mac) {
+    const bool want = !isZeroMac(mac);
+
+    if (want == hasPeer[slot] && (!want || memcmp(peerMac[slot], mac, 6) == 0)) {
+        return;   // no change
     }
 
-    memcpy(peerMac, mac, 6);
-    hasPeer = !isZeroMac(mac);
+    // Release this slot's previous vehicle unless another slot still uses it.
+    if (hasPeer[slot] && !macInUseByOther(slot, peerMac[slot])) {
+        esp_now_del_peer(peerMac[slot]);
+    }
+    hasPeer[slot] = false;
 
-    if (!hasPeer) {
-        Serial.println("[TX] Peer cleared - transmit disabled.");
+    if (!want) {
+        memset(peerMac[slot], 0, 6);
+        Serial.printf("[TX] Slot %u cleared - transmit disabled.\r\n", slot);
         return;
     }
 
-    esp_now_peer_info_t peer = {};
-    memcpy(peer.peer_addr, peerMac, 6);
-    peer.channel = 0;       // 0 = current WiFi channel
-    peer.encrypt = false;
+    memcpy(peerMac[slot], mac, 6);
 
-    esp_err_t err = esp_now_add_peer(&peer);
-    if (err == ESP_OK) {
-        peerAdded = true;
-        Serial.printf("[TX] Peer set: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
-                      peerMac[0], peerMac[1], peerMac[2],
-                      peerMac[3], peerMac[4], peerMac[5]);
-    } else {
-        Serial.printf("[TX] esp_now_add_peer error: %d\r\n", err);
-        hasPeer = false;
+    if (!esp_now_is_peer_exist(mac)) {
+        esp_now_peer_info_t peer = {};
+        memcpy(peer.peer_addr, mac, 6);
+        peer.channel = 0;       // 0 = current WiFi channel
+        peer.encrypt = false;
+
+        esp_err_t err = esp_now_add_peer(&peer);
+        if (err != ESP_OK) {
+            Serial.printf("[TX] esp_now_add_peer error: %d\r\n", err);
+            return;             // hasPeer stays false; the next refresh retries
+        }
     }
+
+    hasPeer[slot] = true;
+    Serial.printf("[TX] Slot %u peer set: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+                  slot, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
 // ── ESP-NOW send callback (for diagnostics) ───────────────────────────────
@@ -179,9 +188,9 @@ static void onSent(const uint8_t* mac, esp_now_send_status_t status) {
 // ── Packet processing ─────────────────────────────────────────────────────
 
 /*
- * dispatchControl - validate and forward a complete 10-byte packet.
- * buf[0] == '<', buf[9] == '>', buf[1..6] are channel bytes,
- * buf[7..8] are button bitmask bytes.
+ * dispatchControl - validate and forward a complete 11-byte packet.
+ * buf[0] == '<', buf[1] = slot, buf[2..7] = channel bytes,
+ * buf[8..9] = button bitmask bytes, buf[10] == '>'.
  */
 static void dispatchControl(const uint8_t* buf) {
     if (buf[0] != PKT_START || buf[PKT_LEN - 1] != PKT_END) {
@@ -189,29 +198,37 @@ static void dispatchControl(const uint8_t* buf) {
         return;
     }
 
-    if (!hasPeer) return;   // silently drop: no peer registered
+    const uint8_t slot = buf[1];
+    if (slot >= NUM_SLOTS) {
+        Serial.printf("[TX] Bad slot in control packet: %u\r\n", slot);
+        return;
+    }
+
+    if (!hasPeer[slot]) return;   // silently drop: no vehicle for this slot
 
     ControlPayload payload;
-    memcpy(payload.ch, buf + 1, NUM_CHANNELS);
-    memcpy(payload.buttons, buf + 1 + NUM_CHANNELS, NUM_BUTTON_BYTES);
+    memcpy(payload.ch, buf + 2, NUM_CHANNELS);
+    memcpy(payload.buttons, buf + 2 + NUM_CHANNELS, NUM_BUTTON_BYTES);
 
-    esp_err_t err = esp_now_send(peerMac, (uint8_t*)&payload, sizeof(payload));
+    esp_err_t err = esp_now_send(peerMac[slot], (uint8_t*)&payload, sizeof(payload));
     if (err != ESP_OK) {
-        Serial.printf("[TX] esp_now_send error: %d\r\n", err);
+        Serial.printf("[TX] esp_now_send error (slot %u): %d\r\n", slot, err);
     }
 }
 
 /*
  * handleLine - process a newline-terminated ASCII command.
- * Currently only the 'P' (peer) command is defined.
+ * Currently only the 'P' (peer) command is defined:  "P <slot> <mac>"
  */
 static void handleLine(const char* line) {
-    if (line[0] == 'P' && line[1] == ' ') {
+    if (line[0] == 'P' && line[1] == ' ' &&
+        line[2] >= '0' && line[2] < ('0' + NUM_SLOTS) && line[3] == ' ') {
+        const uint8_t slot = (uint8_t)(line[2] - '0');
         uint8_t mac[6];
-        if (parseMac(line + 2, mac)) {
-            registerPeer(mac);
+        if (parseMac(line + 4, mac)) {
+            registerPeer(slot, mac);
         } else {
-            Serial.printf("[TX] Bad MAC in peer command: '%s'\r\n", line + 2);
+            Serial.printf("[TX] Bad MAC in peer command: '%s'\r\n", line + 4);
         }
     } else {
         Serial.printf("[TX] Unknown command: '%s'\r\n", line);
@@ -292,57 +309,3 @@ void loop() {
         }
     }
 }
-
-
-/*
- * ═══════════════════════════════════════════════════════════════════════════
- * INTEGRATION NOTE - Pi side (serial_bridge.py additions)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Add this method to SerialBridge in serial_bridge.py:
- *
- *     def send_peer_command(self, mac: str | None) -> bool:
- *         """
- *         Tell the ESP32 TX which peer MAC to target.
- *         Pass None or "00:00:00:00:00:00" to clear (stop transmitting).
- *         """
- *         target = mac if mac else "00:00:00:00:00:00"
- *         cmd = f"P {target}\n".encode()
- *         with self._lock:
- *             if not self.is_connected:
- *                 return False
- *             try:
- *                 self._serial.write(cmd)
- *                 return True
- *             except serial.serialutil.SerialException as exc:
- *                 log.error("send_peer_command error: %s", exc)
- *                 self._serial.close()
- *                 self._serial = None
- *                 return False
- *
- * Then in app.py, hook AppState.on_change to call it:
- *
- *     def on_state_change(reason: str) -> None:
- *         controller_server._on_state_change(reason)   # existing WS push
- *         snap = state.snapshot()
- *         vehicle = snap["selected_vehicle"]
- *         if reason in ("select", "deselect"):
- *             mac = vehicle.mac if vehicle else None
- *             bridge.send_peer_command(mac)
- *
- *     state.on_change = on_state_change
- *
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * BUTTON BITMASK - bit layout reference for the Pi side packer
- * ═══════════════════════════════════════════════════════════════════════════
- *
- *   buttons[0]  bit0=A  bit1=B  bit2=X  bit3=Y  bit4=L1  bit5=R1  bit6=L2  bit7=R2
- *   buttons[1]  bit0=ThumbL  bit1=ThumbR  (bits 2-7 reserved)
- *
- * dispatcher.py should build these two bytes from the evdev BTN_* key state
- * (BTN_SOUTH/BTN_EAST/BTN_NORTH/BTN_WEST, BTN_TL/BTN_TR/BTN_TL2/BTN_TR2,
- * BTN_THUMBL/BTN_THUMBR - see Evdev_Switch_classification.txt) and append
- * them to the 6 axis bytes before the '<' ... '>' frame is written.
- * ═══════════════════════════════════════════════════════════════════════════
- */

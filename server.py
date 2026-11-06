@@ -209,23 +209,14 @@ class ControllerServer:
                 "state":    self._public_snapshot(),
             }), 409
 
-        # TEMP (until Phase 3): the transmitter still has a single peer slot,
-        # so only player 0's vehicle is wired to the radio.
-        if player == 0:
-            if not self._bridge.send_peer_command(vehicle.mac):
-                log.warning("Failed to send peer command for vehicle '%s' - serial port may be down.", vehicle_id)
-        else:
-            log.info("Player %d selected '%s' (transmitter support pending).", player + 1, vehicle_id)
-
+        # The dispatcher watches AppState and points the transmitter at the
+        # player's vehicle; nothing to send from here.
         return jsonify(self._public_snapshot())
 
     def _deselect(self, player: int):
         if not 0 <= player < NUM_PLAYERS:
             abort(404, description=f"Player {player} does not exist.")
         self._state.deselect(player)
-        if player == 0:
-            if not self._bridge.send_peer_command(None):
-                log.warning("Failed to send peer clear command - serial port may be down.")
         return jsonify(self._public_snapshot())
 
     # ── State change hook ─────────────────────────────────────────────────────
