@@ -38,7 +38,13 @@
   {
     "id": "excavator",
     "name": "Excavator",
-    "image": "vehicles/excavator.jpg",
+    "image": "vehicles/Excavator.jpg",
     "mac": "b0:a7:32:15:0f:58"
+  },
+  {
+    "id": "semi",
+    "name": "Semi",
+    "image": "vehicles/Semi.jpg",
+    "mac": "3C:8A:1F:D4:0A:38"
   }
 ]
